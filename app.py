@@ -53,6 +53,9 @@ with st.sidebar:
     putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
     metode = st.selectbox("🧠 Metode", ["Markov", "Markov Order-2", "Markov Gabungan", "LSTM AI", "Ensemble AI + Markov"])
     jumlah_uji = st.number_input("📊 Data Uji", 1, 200, 10)
+    # --- Menu Analisa Ditambahkan ---
+    analisa_menu = st.selectbox("📈 Analisa", ["Default", "Analisa A", "Analisa B"])
+    # ------------------------------
     temperature = st.slider("🌡️ Temperature", 0.1, 2.0, 0.5, step=0.1)
     voting_mode = st.selectbox("⚖️ Kombinasi", ["product", "average"])
     power = st.slider("📈 Confidence Power", 0.5, 3.0, 1.5, 0.1)
@@ -425,4 +428,3 @@ with tab3_container:
 #    tab4(df)
 #with tab5_container:
 #    tab6(df, selected_lokasi)
-            
