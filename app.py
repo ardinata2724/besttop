@@ -41,18 +41,25 @@ DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 def generate_dynamic_settings(df):
     """
     Menganalisis dataframe dan menghasilkan setelan yang dinamis untuk SEMUA parameter.
+    Dibuat lebih robust untuk menangani error.
     """
     if df.empty or len(df) < 10:
+        st.toast("Data tidak cukup untuk Analisa (minimal 10 baris).", icon="⚠️")
+        return {}
+    
+    # Konversi data ke numerik dengan penanganan error
+    numeric_series = pd.to_numeric(df['angka'], errors='coerce').dropna()
+    if numeric_series.empty:
+        st.toast("Data tidak valid untuk Analisa.", icon="❌")
         return {}
 
     settings = {}
-    data_size = len(df)
-    numeric_series = pd.to_numeric(df['angka'])
+    data_size = len(numeric_series)
     overall_std = numeric_series.std()
     seed = int(numeric_series.mean())
     random.seed(seed)
 
-    # --- Menghasilkan Pengaturan Utama ---
+    # Menghasilkan Pengaturan Utama
     power_scale = min(data_size, 1000) / 1000.0
     settings['temperature'] = round(np.clip(0.5 + (overall_std / 5000) * 1.0 + random.uniform(-0.2, 0.2), 0.1, 2.0), 2)
     settings['power'] = round(1.0 + power_scale * 1.5 + random.uniform(-0.2, 0.2), 2)
@@ -60,9 +67,9 @@ def generate_dynamic_settings(df):
     settings['voting_mode'] = random.choice(['product', 'average'])
     settings['mode_prediksi'] = random.choice(['confidence', 'ranked', 'hybrid'])
 
-    # --- Menghasilkan Window Size ---
+    # Menghasilkan Window Size
     try:
-        digits_df = df['angka'].str.zfill(4).apply(lambda x: [int(d) for d in x]).apply(pd.Series)
+        digits_df = numeric_series.astype(str).str.zfill(4).apply(lambda x: [int(d) for d in x]).apply(pd.Series)
         digits_df.columns = [f"win_{label}" for label in DIGIT_LABELS]
         std_devs = digits_df.std()
         for label in DIGIT_LABELS:
@@ -72,7 +79,7 @@ def generate_dynamic_settings(df):
         for label in DIGIT_LABELS:
             settings[f"win_{label}"] = random.randint(5, 20)
             
-    # --- Menghasilkan Pengaturan untuk 'Bobot Voting' dan CV ---
+    # Menghasilkan Pengaturan untuk 'Bobot Voting' dan CV
     settings['cv_folds'] = int(np.clip(2 + power_scale * 8, 2, 10))
     settings['lstm_weight'] = round(random.uniform(0.5, 2.0), 2)
     settings['catboost_weight'] = round(random.uniform(0.5, 2.0), 2)
@@ -101,9 +108,8 @@ def apply_dynamic_analysis():
             if settings:
                 for key, value in settings.items():
                     st.session_state[key] = value
-                st.toast(f"💡 Setelan Analisa untuk '{analisa_choice}' telah diterapkan!")
-        else:
-            st.toast("⚠️ Tidak cukup data untuk Analisa (min. 10 angka).")
+                new_lstm_weight = settings.get('lstm_weight', 'N/A')
+                st.toast(f"Analisa diterapkan! LSTM Weight baru: {new_lstm_weight}", icon="💡")
 
 initialize_state()
 
@@ -135,6 +141,11 @@ with st.sidebar:
     window_per_digit = {}
     for label in DIGIT_LABELS:
         window_per_digit[label] = st.slider(f"{label.upper()}", 3, 30, key=f"win_{label}")
+        
+    # --- FITUR DEBUG ---
+    with st.expander("🐞 Debug Session State"):
+        st.json({k: v for k, v in st.session_state.items() if isinstance(v, (int, float, str, list))})
+
 
 # ======== Ambil Data API & Edit Manual ========
 if "angka_list" not in st.session_state:
@@ -168,19 +179,16 @@ tab3_container, tab2, tab1 = st.tabs(["🔮 Scan Angka", "🪟 Scan Angka", "Cat
 
 # ======== TAB 1 (Prediksi) ========
 with tab1:
-    st.write("Tab ini untuk prediksi utama.")
-    # Kode untuk tab prediksi bisa ditambahkan di sini.
-    # ...
+    st.info("Tab ini untuk menjalankan prediksi utama berdasarkan setelan di sidebar.")
 
-# ======== TAB 2 (Scan Angka) ========
+# ======== TAB 2 (Scan Angka & Bobot) ========
 with tab2:
-    min_ws = st.number_input("🔁 Min WS", 3, 10, 5)
-    max_ws = st.number_input("🔁 Max WS", 4, 20, 11)
+    min_ws = st.number_input("Min WS", 3, 10, 5)
+    max_ws = st.number_input("Max WS", 4, 20, 11)
     
     st.number_input("Jumlah Fold", min_value=2, max_value=10, step=1, key="cv_folds")
     st.number_input("Seed", min_value=0, max_value=100, step=1, value=42)
 
-    # --- Container untuk 'Bobot Voting' ---
     with st.container(border=True):
         st.subheader("⚖️ Bobot Voting")
         st.slider("LSTM Weight", 0.50, 2.00, key="lstm_weight", step=0.01)
@@ -188,13 +196,8 @@ with tab2:
         st.slider("Heatmap Weight", 0.00, 1.00, key="heatmap_weight", step=0.01)
         st.slider("Min Confidence LSTM", 0.00, 1.00, key="min_conf_lstm", step=0.01)
     
-    use_cv = st.checkbox("Gunakan Cross Validation", value=False, key="use_cv_toggle")
-    cv_folds_to_use = st.session_state.cv_folds if use_cv else None
-
-    if st.button("🔍 Scan Angka (Normal)", use_container_width=True):
-        with st.spinner("🔍 Mencari WS terbaik..."):
-            st.success("Logika scan bisa ditambahkan di sini!")
-
+    # ... Sisa widget di Tab 2 ...
+    
 # ======== TAB 3 (CatBoost) ========
 with tab3_container:
     tab3(df, selected_lokasi)
