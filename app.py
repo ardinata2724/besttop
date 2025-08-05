@@ -6,6 +6,7 @@ import numpy as np
 import time
 import matplotlib.pyplot as plt
 import seaborn as sns
+import random
 
 from markov_model import top6_markov, top6_markov_order2, top6_markov_hybrid
 from ai_model import (
@@ -37,16 +38,60 @@ st.title("Prediksi 4D - AI")
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
-# --- Pengaturan Preset untuk Menu Analisa ---
-# Setelan spesifik dikosongkan sesuai permintaan. Semua pasaran akan menggunakan setelan default.
-PRESET_SETTINGS = {}
+# --- FUNGSI BARU: Analisa Dinamis Berdasarkan Data ---
+def generate_dynamic_settings(df):
+    """
+    Menganalisis dataframe dan menghasilkan setelan yang dinamis.
+    """
+    if df.empty or len(df) < 10:
+        return {} # Kembalikan kosong jika data tidak cukup
 
-# Setelan default untuk semua pasaran yang dipilih di menu Analisa
-DEFAULT_ANALYZE_PRESET = {
-    "temperature": 1.0, "voting_mode": "product", "power": 1.7, "min_conf": 0.0030,
-    "mode_prediksi": "hybrid", "win_ribuan": 9, "win_ratusan": 9, "win_puluhan": 9, "win_satuan": 9,
-}
+    settings = {}
+    
+    # Analisis dasar
+    data_size = len(df)
+    numeric_series = pd.to_numeric(df['angka'])
+    overall_std = numeric_series.std()
+    
+    # Gunakan mean dari angka sebagai seed untuk randomness yang deterministik
+    seed = int(numeric_series.mean())
+    random.seed(seed)
 
+    # 1. Hasilkan Temperature
+    # Semakin besar std dev, semakin besar kemungkinan temperature tinggi
+    temp_base = 0.5 + (overall_std / 5000) * 1.0 # Skala kasar
+    settings['temperature'] = round(np.clip(temp_base + random.uniform(-0.2, 0.2), 0.1, 2.0), 2)
+
+    # 2. Hasilkan Window Size per Digit
+    try:
+        digits_df = df['angka'].str.zfill(4).apply(lambda x: [int(d) for d in x]).apply(pd.Series)
+        digits_df.columns = ["win_ribuan", "win_ratusan", "win_puluhan", "win_satuan"]
+        std_devs = digits_df.std()
+        
+        for i, label in enumerate(DIGIT_LABELS):
+            # std dev digit berkisar 0-2.87
+            # Semakin acak (std besar), butuh window lebih besar
+            ws = 5 + (std_devs[f"win_{label}"] / 2.87) * 20 + random.uniform(-2, 2)
+            settings[f"win_{label}"] = int(np.clip(ws, 3, 30))
+    except:
+        # Fallback jika ada error
+        for label in DIGIT_LABELS:
+            settings[f"win_{label}"] = random.randint(5, 20)
+
+
+    # 3. Hasilkan Confidence Power & Min Confidence
+    # Semakin banyak data, kita bisa lebih 'percaya diri'
+    power_scale = min(data_size, 1000) / 1000.0 # Skala dari 0 to 1
+    settings['power'] = round(1.0 + power_scale * 1.5 + random.uniform(-0.2, 0.2), 2) # Range ~1.0 - 2.5
+    settings['min_conf'] = round(0.01 - power_scale * 0.0095 + random.uniform(-0.0005, 0.0005), 4) # Range ~0.01 - 0.0005
+    settings['min_conf'] = np.clip(settings['min_conf'], 0.0001, 0.01)
+
+
+    # 4. Hasilkan Pengaturan Kategorikal
+    settings['voting_mode'] = random.choice(['product', 'average'])
+    settings['mode_prediksi'] = random.choice(['confidence', 'ranked', 'hybrid'])
+
+    return settings
 
 # --- Inisialisasi dan Fungsi Callback untuk Session State ---
 def initialize_state():
@@ -58,13 +103,21 @@ def initialize_state():
         if key not in st.session_state:
             st.session_state[key] = value
 
-def apply_preset():
-    preset_key = st.session_state.analisa_choice
-    if preset_key != "Tidak Ada":
-        # Karena PRESET_SETTINGS kosong, .get() akan selalu mengembalikan DEFAULT_ANALYZE_PRESET
-        settings = PRESET_SETTINGS.get(preset_key, DEFAULT_ANALYZE_PRESET)
-        for key, value in settings.items():
-            st.session_state[key] = value
+def apply_dynamic_analysis():
+    """Callback untuk menerapkan setelan dinamis."""
+    analisa_choice = st.session_state.get("analisa_choice")
+    if analisa_choice and analisa_choice != "Tidak Ada":
+        angka_list = st.session_state.get("angka_list", [])
+        if len(angka_list) >= 10:
+            df_for_analysis = pd.DataFrame({"angka": angka_list})
+            settings = generate_dynamic_settings(df_for_analysis)
+            if settings:
+                for key, value in settings.items():
+                    st.session_state[key] = value
+                st.toast(f"💡 Setelan Analisa untuk '{analisa_choice}' telah diterapkan!")
+        else:
+            st.toast("⚠️ Tidak cukup data untuk Analisa (min. 10 angka).")
+
 
 # Panggil inisialisasi di awal
 initialize_state()
@@ -78,16 +131,14 @@ with st.sidebar:
     metode = st.selectbox("🧠 Metode", ["Markov", "Markov Order-2", "Markov Gabungan", "LSTM AI", "Ensemble AI + Markov"])
     jumlah_uji = st.number_input("📊 Data Uji", 1, 200, 10)
     
-    # --- Menu Analisa dinamis berdasarkan semua pasaran ---
     st.selectbox(
         "📈 Analisa",
-        ["Tidak Ada"] + lokasi_list,  # Menggunakan `lokasi_list` untuk pilihan
+        ["Tidak Ada"] + lokasi_list,
         key="analisa_choice",
-        on_change=apply_preset,
-        help="Pilih pasaran untuk menerapkan setelan otomatis."
+        on_change=apply_dynamic_analysis,
+        help="Pilih pasaran untuk menghasilkan & menerapkan setelan acak berdasarkan data saat ini."
     )
     
-    # --- Widget yang terhubung dengan session state ---
     temperature = st.slider("🌡️ Temperature", 0.1, 2.0, key="temperature", step=0.1)
     voting_mode = st.selectbox("⚖️ Kombinasi", ["product", "average"], key="voting_mode")
     power = st.slider("📈 Confidence Power", 0.5, 3.0, key="power", step=0.1)
@@ -103,7 +154,7 @@ with st.sidebar:
             f"{label.upper()}", 3, 30, key=f"win_{label}"
         )
 
-# ======== Ambil Data API ========
+# ======== Ambil Data API & Edit Manual ========
 if "angka_list" not in st.session_state:
     st.session_state.angka_list = []
 
@@ -128,11 +179,13 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_input = "\n".join(st.session_state.angka_list)
     riwayat_input = st.text_area("📝 1 angka per baris:", value=riwayat_input, height=300)
     st.session_state.angka_list = [x.strip() for x in riwayat_input.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
-    df = pd.DataFrame({"angka": st.session_state.angka_list})
+    df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
+
 
 # ======== Tabs Utama ========
 tab3_container, tab2, tab1 = st.tabs(["🔮 Scan Angka", "🪟 Scan Angka", "CatBoost"])
 
+# ... (Sisa kode di dalam tab tidak perlu diubah karena sudah menggunakan variabel dari sidebar) ...
 # ======== TAB 1 ========
 with tab1:
     if metode in ["LSTM AI", "Ensemble AI + Markov"]:
@@ -173,8 +226,8 @@ with tab1:
     
     if st.button("🔮 Prediksi", use_container_width=True):
         
-        if len(df) < max(window_per_digit.values()) + 1:
-            st.warning("❌ Data tidak cukup.")
+        if len(df) < max(list(window_per_digit.values()) or [7]) + 1:
+            st.warning("❌ Data tidak cukup untuk prediksi dengan window size saat ini.")
         else:
             with st.spinner("⏳ Memproses..."):
                 result, probs = None, None
@@ -184,21 +237,20 @@ with tab1:
                     result = top6_markov_order2(df)
                 elif metode == "Markov Gabungan":
                     result = top6_markov_hybrid(df)
-                elif metode == "LSTM AI":
+                elif metode in ["LSTM AI", "Ensemble AI + Markov"]:
                     result, probs = top6_model(df, lokasi=selected_lokasi, model_type=model_type,  
                                                return_probs=True, temperature=temperature,  
                                                mode_prediksi=mode_prediksi, window_dict=window_per_digit)  
-                elif metode == "Ensemble AI + Markov":
-                    lstm_result, probs = top6_model(df, lokasi=selected_lokasi, model_type=model_type,  
-                                                    return_probs=True, temperature=temperature,  
-                                                    mode_prediksi=mode_prediksi, window_dict=window_per_digit)  
-                    markov_result, _ = top6_markov(df)  
-                    result = []  
-                    for i in range(4):  
-                        merged = lstm_result[i] + markov_result[i]  
-                        freq = {x: merged.count(x) for x in set(merged)}  
-                        top6 = sorted(freq.items(), key=lambda x: -x[1])[:6]  
-                        result.append([x[0] for x in top6])
+                    if metode == "Ensemble AI + Markov" and result:
+                        markov_result, _ = top6_markov(df)  
+                        ensemble_result = []
+                        for i in range(4):  
+                            merged = result[i] + markov_result[i]  
+                            freq = {x: merged.count(x) for x in set(merged)}  
+                            top6 = sorted(freq.items(), key=lambda x: -x[1])[:6]  
+                            ensemble_result.append([x[0] for x in top6])
+                        result = ensemble_result
+
 
             if result:
                 st.subheader("🎯 Hasil Prediksi Top 6")
@@ -225,7 +277,7 @@ with tab1:
                     for komb, score in top_komb:
                         st.markdown(f"`{komb}` - Confidence: `{score:.4f}`")
 
-# ======== Sisa kode (TAB 2, TAB 3, dst.) tetap sama ========
+# ... (sisa kode untuk tab lainnya tidak diubah) ...
 with tab2:
     min_ws = st.number_input("🔁 Min WS", 3, 10, 4)
     max_ws = st.number_input("🔁 Max WS", 4, 20, 12)
@@ -279,7 +331,6 @@ with tab2:
             st.session_state.scan_step = 0
             st.session_state.scan_in_progress = True
             st.rerun()
-
-# ... (sisa kode untuk tab lainnya tidak diubah) ...
+            
 with tab3_container:
     tab3(df, selected_lokasi)
