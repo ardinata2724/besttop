@@ -38,54 +38,21 @@ st.title("Prediksi 4D - AI")
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
 # --- Pengaturan Preset untuk Menu Analisa ---
-PRESET_SETTINGS = {
-    "HONGKONG": {
-        "temperature": 1.2,
-        "voting_mode": "average",
-        "power": 2.0,
-        "min_conf": 0.0050,
-        "mode_prediksi": "hybrid",
-        "win_ribuan": 10,
-        "win_ratusan": 12,
-        "win_puluhan": 8,
-        "win_satuan": 15,
-    },
-    "SYDNEY": {
-        "temperature": 0.8,
-        "voting_mode": "product",
-        "power": 1.5,
-        "min_conf": 0.0010,
-        "mode_prediksi": "confidence",
-        "win_ribuan": 7,
-        "win_ratusan": 7,
-        "win_puluhan": 7,
-        "win_satuan": 7,
-    },
-    "BULLSEYE": {
-        "temperature": 1.0,
-        "voting_mode": "product",
-        "power": 1.8,
-        "min_conf": 0.0025,
-        "mode_prediksi": "ranked",
-        "win_ribuan": 5,
-        "win_ratusan": 9,
-        "win_puluhan": 11,
-        "win_satuan": 6,
-    }
+# Setelan spesifik dikosongkan sesuai permintaan. Semua pasaran akan menggunakan setelan default.
+PRESET_SETTINGS = {}
+
+# Setelan default untuk semua pasaran yang dipilih di menu Analisa
+DEFAULT_ANALYZE_PRESET = {
+    "temperature": 1.0, "voting_mode": "product", "power": 1.7, "min_conf": 0.0030,
+    "mode_prediksi": "hybrid", "win_ribuan": 9, "win_ratusan": 9, "win_puluhan": 9, "win_satuan": 9,
 }
+
 
 # --- Inisialisasi dan Fungsi Callback untuk Session State ---
 def initialize_state():
     defaults = {
-        "temperature": 0.5,
-        "voting_mode": "product",
-        "power": 1.5,
-        "min_conf": 0.0005,
-        "mode_prediksi": "confidence",
-        "win_ribuan": 7,
-        "win_ratusan": 7,
-        "win_puluhan": 7,
-        "win_satuan": 7,
+        "temperature": 0.5, "voting_mode": "product", "power": 1.5, "min_conf": 0.0005,
+        "mode_prediksi": "confidence", "win_ribuan": 7, "win_ratusan": 7, "win_puluhan": 7, "win_satuan": 7,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -93,8 +60,9 @@ def initialize_state():
 
 def apply_preset():
     preset_key = st.session_state.analisa_choice
-    if preset_key in PRESET_SETTINGS:
-        settings = PRESET_SETTINGS[preset_key]
+    if preset_key != "Tidak Ada":
+        # Karena PRESET_SETTINGS kosong, .get() akan selalu mengembalikan DEFAULT_ANALYZE_PRESET
+        settings = PRESET_SETTINGS.get(preset_key, DEFAULT_ANALYZE_PRESET)
         for key, value in settings.items():
             st.session_state[key] = value
 
@@ -110,10 +78,10 @@ with st.sidebar:
     metode = st.selectbox("🧠 Metode", ["Markov", "Markov Order-2", "Markov Gabungan", "LSTM AI", "Ensemble AI + Markov"])
     jumlah_uji = st.number_input("📊 Data Uji", 1, 200, 10)
     
-    # --- Menu Analisa dengan Fungsionalitas Baru ---
+    # --- Menu Analisa dinamis berdasarkan semua pasaran ---
     st.selectbox(
         "📈 Analisa",
-        ["Tidak Ada"] + list(PRESET_SETTINGS.keys()),
+        ["Tidak Ada"] + lokasi_list,  # Menggunakan `lokasi_list` untuk pilihan
         key="analisa_choice",
         on_change=apply_preset,
         help="Pilih pasaran untuk menerapkan setelan otomatis."
@@ -131,7 +99,6 @@ with st.sidebar:
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
-        # Widget ini sudah terhubung dengan session state melalui `key`
         window_per_digit[label] = st.slider(
             f"{label.upper()}", 3, 30, key=f"win_{label}"
         )
@@ -259,12 +226,11 @@ with tab1:
                         st.markdown(f"`{komb}` - Confidence: `{score:.4f}`")
 
 # ======== Sisa kode (TAB 2, TAB 3, dst.) tetap sama ========
-# ... (kode untuk tab2 dan tab3_container tidak diubah) ...
 with tab2:
     min_ws = st.number_input("🔁 Min WS", 3, 10, 4)
     max_ws = st.number_input("🔁 Max WS", 4, 20, 12)
-    min_acc_slider = st.slider("🌡️ Min Acc", 0.1, 2.0, 0.5, step=0.1, key="min_acc_slider_tab2")
-    min_conf_slider = st.slider("🌡️ Min Conf", 0.1, 2.0, 0.5, step=0.1, key="min_conf_slider_tab2")
+    min_acc_slider = st.slider("🌡️ Min Acc", 0.1, 1.0, 0.6, step=0.05, key="min_acc_slider_tab2")
+    min_conf_slider = st.slider("🌡️ Min Conf", 0.1, 1.0, 0.6, step=0.05, key="min_conf_slider_tab2")
 
     if "scan_step" not in st.session_state:
         st.session_state.scan_step = 0
@@ -313,6 +279,7 @@ with tab2:
             st.session_state.scan_step = 0
             st.session_state.scan_in_progress = True
             st.rerun()
-    # ... and so on for the rest of the file
+
+# ... (sisa kode untuk tab lainnya tidak diubah) ...
 with tab3_container:
     tab3(df, selected_lokasi)
