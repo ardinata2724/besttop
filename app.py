@@ -37,45 +37,6 @@ st.title("Prediksi 4D - AI")
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
-# ================= KUMPULAN PRESET UNTUK MENU ANALISA =================
-ANALISA_PRESETS = {
-    "Tidak Ada": {},  # Opsi default, tidak mengubah apa-apa
-    "Analisa Sydney": {
-        "temperature": 1.2,
-        "kombinasi": "product",
-        "power": 2.0,
-        "min_conf": 0.0010,
-        "mode_prediksi": "hybrid",
-        "win_ribuan": 10,
-        "win_ratusan": 8,
-        "win_puluhan": 12,
-        "win_satuan": 9,
-    },
-    "Analisa Hong Kong": {
-        "temperature": 0.8,
-        "kombinasi": "average",
-        "power": 1.5,
-        "min_conf": 0.0005,
-        "mode_prediksi": "confidence",
-        "win_ribuan": 7,
-        "win_ratusan": 7,
-        "win_puluhan": 15,
-        "win_satuan": 15,
-    },
-    "Analisa Singapore": {
-        "temperature": 1.0,
-        "kombinasi": "product",
-        "power": 1.7,
-        "min_conf": 0.0008,
-        "mode_prediksi": "ranked",
-        "win_ribuan": 11,
-        "win_ratusan": 11,
-        "win_puluhan": 11,
-        "win_satuan": 11,
-    }
-}
-# Anda bisa menambahkan preset lain di sini
-
 # ====== Inisialisasi session_state window_per_digit ======
 for label in DIGIT_LABELS:
     key = f"win_{label}"
@@ -92,46 +53,19 @@ with st.sidebar:
     putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
     metode = st.selectbox("🧠 Metode", ["Markov", "Markov Order-2", "Markov Gabungan", "LSTM AI", "Ensemble AI + Markov"])
     jumlah_uji = st.number_input("📊 Data Uji", 1, 200, 10)
-    
-    # Menu Analisa (Preset)
-    pilihan_analisa = st.selectbox(
-        "🔎 Analisa (Preset)",
-        list(ANALISA_PRESETS.keys()),
-        help="Pilih preset untuk mengubah semua pengaturan di bawah secara otomatis."
-    )
-
-    # Ambil nilai dari preset yang dipilih, atau gunakan nilai default jika "Tidak Ada"
-    preset_values = ANALISA_PRESETS.get(pilihan_analisa, {})
-
-    # Definisikan widget dengan nilai dari preset
-    temp_val = preset_values.get("temperature", 0.5)
-    temperature = st.slider("🌡️ Temperature", 0.1, 2.0, temp_val, step=0.1)
-
-    kombinasi_opts = ["product", "average"]
-    kombinasi_val = preset_values.get("kombinasi", "product")
-    kombinasi_idx = kombinasi_opts.index(kombinasi_val) if kombinasi_val in kombinasi_opts else 0
-    voting_mode = st.selectbox("⚖️ Kombinasi", kombinasi_opts, index=kombinasi_idx)
-
-    power_val = preset_values.get("power", 1.5)
-    power = st.slider("📈 Confidence Power", 0.5, 3.0, power_val, 0.1)
-
-    min_conf_val = preset_values.get("min_conf", 0.0005)
-    min_conf = st.slider("🔎 Min Confidence", 0.0001, 0.01, min_conf_val, 0.0001, format="%.4f")
-    
-    use_transformer = st.checkbox("🤖 Gunakan Transformer") # Tidak termasuk dalam preset, setting manual
+    temperature = st.slider("🌡️ Temperature", 0.1, 2.0, 0.5, step=0.1)
+    voting_mode = st.selectbox("⚖️ Kombinasi", ["product", "average"])
+    power = st.slider("📈 Confidence Power", 0.5, 3.0, 1.5, 0.1)
+    min_conf = st.slider("🔎 Min Confidence", 0.0001, 0.01, 0.0005, 0.0001, format="%.4f")
+    use_transformer = st.checkbox("🤖 Gunakan Transformer")
     model_type = "transformer" if use_transformer else "lstm"
-
-    prediksi_opts = ["confidence", "ranked", "hybrid"]
-    prediksi_val = preset_values.get("mode_prediksi", "hybrid")
-    prediksi_idx = prediksi_opts.index(prediksi_val) if prediksi_val in prediksi_opts else 0
-    mode_prediksi = st.selectbox("🎯 Mode Prediksi", prediksi_opts, index=prediksi_idx)
+    mode_prediksi = st.selectbox("🎯 Mode Prediksi", ["confidence", "ranked", "hybrid"])
 
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
-        win_val = preset_values.get(f"win_{label}", st.session_state[f"win_{label}"])
         window_per_digit[label] = st.slider(
-            f"{label.upper()}", 3, 30, win_val, key=f"win_{label}"
+            f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}"
         )
 
 # ======== Manajemen Model ========
@@ -275,7 +209,7 @@ with tab2:
     min_ws = st.number_input("🔁 Min WS", 3, 10, 4)
     max_ws = st.number_input("🔁 Max WS", 4, 20, 12)
     min_acc = st.slider("🌡️ Min Acc", 0.1, 2.0, 0.5, step=0.1)
-    min_conf_scan = st.slider("🌡️ Min Conf (Scan)", 0.1, 2.0, 0.5, step=0.1)
+    min_conf = st.slider("🌡️ Min Conf", 0.1, 2.0, 0.5, step=0.1)
 
     if "scan_step" not in st.session_state:
         st.session_state.scan_step = 0
@@ -313,7 +247,7 @@ with tab2:
                                 df, label, selected_lokasi, model_type=model_type,
                                 min_ws=min_ws, max_ws=max_ws, temperature=temperature,
                                 use_cv=use_cv, cv_folds=cv_folds or 2,
-                                seed=42, min_acc=min_acc, min_conf=min_conf_scan
+                                seed=42, min_acc=min_acc, min_conf=min_conf
                             )
                             st.session_state.window_per_digit[label] = ws
                             st.session_state[f"best_ws_{label}"] = ws
@@ -349,7 +283,7 @@ with tab2:
                         df, label, selected_lokasi, model_type=model_type,
                         min_ws=min_ws, max_ws=max_ws, temperature=temperature,
                         use_cv=use_cv, cv_folds=cv_folds or 2,
-                        seed=42, min_acc=min_acc, min_conf=min_conf_scan
+                        seed=42, min_acc=min_acc, min_conf=min_conf
                     )
                     st.session_state.window_per_digit[label] = ws
                     st.session_state[f"best_ws_{label}"] = ws
@@ -484,48 +418,6 @@ with tab2:
                     st.pyplot(fig)
                 except Exception as e:
                     st.warning(f"⚠️ Gagal visualisasi: {e}")
-
-        st.markdown("---")
-        if st.button("🔮 Prediksi dengan WS CatBoost", use_container_width=True, key="prediksi_catboost"):
-            if "catboost_best_ws" in st.session_state and st.session_state.catboost_best_ws and all(label in st.session_state.catboost_best_ws for label in DIGIT_LABELS):
-                with st.spinner("⏳ Memprediksi dengan WS dari CatBoost..."):
-                    catboost_ws_dict = st.session_state.catboost_best_ws
-                    
-                    # Dapatkan prediksi Top 6
-                    result, probs = top6_model(df, lokasi=selected_lokasi, model_type=model_type,  
-                                               return_probs=True, temperature=temperature,  
-                                               mode_prediksi=mode_prediksi, window_dict=catboost_ws_dict)
-                    
-                    if result:
-                        st.subheader("🎯 Hasil Prediksi Top 6 (CatBoost WS)")
-                        for i, label in enumerate(["Ribuan", "Ratusan", "Puluhan", "Satuan"]):
-                            st.markdown(f"**{label}:** {', '.join(map(str, result[i]))}")
-
-                    if probs:
-                        st.subheader("📊 Confidence Bar (CatBoost WS)")
-                        for i, label in enumerate(DIGIT_LABELS):
-                            st.markdown(f"**{label.upper()}**")
-                            dconf = pd.DataFrame({
-                                "Digit": [str(d) for d in result[i]],
-                                "Confidence": probs[i]
-                            }).sort_values("Confidence", ascending=True)
-                            st.bar_chart(dconf.set_index("Digit"))
-
-                    # Dapatkan kombinasi 4D
-                    with st.spinner("🔢 Mencari kombinasi 4D (CatBoost WS)..."):
-                        top_komb = kombinasi_4d(df, lokasi=selected_lokasi, model_type=model_type,
-                                                top_n=10, min_conf=min_conf, power=power,
-                                                mode=voting_mode, window_dict=catboost_ws_dict,
-                                                mode_prediksi=mode_prediksi)
-                        st.subheader("💡 Kombinasi 4D Top (CatBoost WS)")
-                        if top_komb:
-                            for komb, score in top_komb:
-                                st.markdown(f"`{komb}` - Confidence: `{score:.4f}`")
-                        else:
-                            st.warning("Tidak ada kombinasi 4D yang memenuhi kriteria.")
-            else:
-                st.error("❌ Hasil WS dari CatBoost tidak lengkap. Jalankan 'Scan CatBoost (Semua Digit)' terlebih dahulu.")
-
 
 with tab3_container:
     tab3(df, selected_lokasi)
