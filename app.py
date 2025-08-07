@@ -37,6 +37,45 @@ st.title("Prediksi 4D - AI")
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
+# ================= KUMPULAN PRESET UNTUK MENU ANALISA =================
+ANALISA_PRESETS = {
+    "Tidak Ada": {},  # Opsi default, tidak mengubah apa-apa
+    "Analisa Sydney": {
+        "temperature": 1.2,
+        "kombinasi": "product",
+        "power": 2.0,
+        "min_conf": 0.0010,
+        "mode_prediksi": "hybrid",
+        "win_ribuan": 10,
+        "win_ratusan": 8,
+        "win_puluhan": 12,
+        "win_satuan": 9,
+    },
+    "Analisa Hong Kong": {
+        "temperature": 0.8,
+        "kombinasi": "average",
+        "power": 1.5,
+        "min_conf": 0.0005,
+        "mode_prediksi": "confidence",
+        "win_ribuan": 7,
+        "win_ratusan": 7,
+        "win_puluhan": 15,
+        "win_satuan": 15,
+    },
+    "Analisa Singapore": {
+        "temperature": 1.0,
+        "kombinasi": "product",
+        "power": 1.7,
+        "min_conf": 0.0008,
+        "mode_prediksi": "ranked",
+        "win_ribuan": 11,
+        "win_ratusan": 11,
+        "win_puluhan": 11,
+        "win_satuan": 11,
+    }
+}
+# Anda bisa menambahkan preset lain di sini
+
 # ====== Inisialisasi session_state window_per_digit ======
 for label in DIGIT_LABELS:
     key = f"win_{label}"
@@ -54,22 +93,45 @@ with st.sidebar:
     metode = st.selectbox("🧠 Metode", ["Markov", "Markov Order-2", "Markov Gabungan", "LSTM AI", "Ensemble AI + Markov"])
     jumlah_uji = st.number_input("📊 Data Uji", 1, 200, 10)
     
-    # KODE YANG DIKEMBALIKAN
-    pilihan_analisa = st.selectbox("🔎 Analisa", ["Tidak Ada", "Analisa Akurasi", "Distribusi Digit"], help="Pilih jenis analisa untuk ditampilkan")
+    # Menu Analisa (Preset)
+    pilihan_analisa = st.selectbox(
+        "🔎 Analisa (Preset)",
+        list(ANALISA_PRESETS.keys()),
+        help="Pilih preset untuk mengubah semua pengaturan di bawah secara otomatis."
+    )
 
-    temperature = st.slider("🌡️ Temperature", 0.1, 2.0, 0.5, step=0.1)
-    voting_mode = st.selectbox("⚖️ Kombinasi", ["product", "average"])
-    power = st.slider("📈 Confidence Power", 0.5, 3.0, 1.5, 0.1)
-    min_conf = st.slider("🔎 Min Confidence", 0.0001, 0.01, 0.0005, 0.0001, format="%.4f")
-    use_transformer = st.checkbox("🤖 Gunakan Transformer")
+    # Ambil nilai dari preset yang dipilih, atau gunakan nilai default jika "Tidak Ada"
+    preset_values = ANALISA_PRESETS.get(pilihan_analisa, {})
+
+    # Definisikan widget dengan nilai dari preset
+    temp_val = preset_values.get("temperature", 0.5)
+    temperature = st.slider("🌡️ Temperature", 0.1, 2.0, temp_val, step=0.1)
+
+    kombinasi_opts = ["product", "average"]
+    kombinasi_val = preset_values.get("kombinasi", "product")
+    kombinasi_idx = kombinasi_opts.index(kombinasi_val) if kombinasi_val in kombinasi_opts else 0
+    voting_mode = st.selectbox("⚖️ Kombinasi", kombinasi_opts, index=kombinasi_idx)
+
+    power_val = preset_values.get("power", 1.5)
+    power = st.slider("📈 Confidence Power", 0.5, 3.0, power_val, 0.1)
+
+    min_conf_val = preset_values.get("min_conf", 0.0005)
+    min_conf = st.slider("🔎 Min Confidence", 0.0001, 0.01, min_conf_val, 0.0001, format="%.4f")
+    
+    use_transformer = st.checkbox("🤖 Gunakan Transformer") # Tidak termasuk dalam preset, setting manual
     model_type = "transformer" if use_transformer else "lstm"
-    mode_prediksi = st.selectbox("🎯 Mode Prediksi", ["confidence", "ranked", "hybrid"])
+
+    prediksi_opts = ["confidence", "ranked", "hybrid"]
+    prediksi_val = preset_values.get("mode_prediksi", "hybrid")
+    prediksi_idx = prediksi_opts.index(prediksi_val) if prediksi_val in prediksi_opts else 0
+    mode_prediksi = st.selectbox("🎯 Mode Prediksi", prediksi_opts, index=prediksi_idx)
 
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
+        win_val = preset_values.get(f"win_{label}", st.session_state[f"win_{label}"])
         window_per_digit[label] = st.slider(
-            f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}"
+            f"{label.upper()}", 3, 30, win_val, key=f"win_{label}"
         )
 
 # ======== Manajemen Model ========
@@ -213,7 +275,7 @@ with tab2:
     min_ws = st.number_input("🔁 Min WS", 3, 10, 4)
     max_ws = st.number_input("🔁 Max WS", 4, 20, 12)
     min_acc = st.slider("🌡️ Min Acc", 0.1, 2.0, 0.5, step=0.1)
-    min_conf = st.slider("🌡️ Min Conf", 0.1, 2.0, 0.5, step=0.1)
+    min_conf_scan = st.slider("🌡️ Min Conf (Scan)", 0.1, 2.0, 0.5, step=0.1)
 
     if "scan_step" not in st.session_state:
         st.session_state.scan_step = 0
@@ -251,7 +313,7 @@ with tab2:
                                 df, label, selected_lokasi, model_type=model_type,
                                 min_ws=min_ws, max_ws=max_ws, temperature=temperature,
                                 use_cv=use_cv, cv_folds=cv_folds or 2,
-                                seed=42, min_acc=min_acc, min_conf=min_conf
+                                seed=42, min_acc=min_acc, min_conf=min_conf_scan
                             )
                             st.session_state.window_per_digit[label] = ws
                             st.session_state[f"best_ws_{label}"] = ws
@@ -287,7 +349,7 @@ with tab2:
                         df, label, selected_lokasi, model_type=model_type,
                         min_ws=min_ws, max_ws=max_ws, temperature=temperature,
                         use_cv=use_cv, cv_folds=cv_folds or 2,
-                        seed=42, min_acc=min_acc, min_conf=min_conf
+                        seed=42, min_acc=min_acc, min_conf=min_conf_scan
                     )
                     st.session_state.window_per_digit[label] = ws
                     st.session_state[f"best_ws_{label}"] = ws
