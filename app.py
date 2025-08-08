@@ -19,10 +19,6 @@ from ai_model import (
     build_transformer_model
 )
 from lokasi_list import lokasi_list
-# Pastikan file-file ini ada jika Anda menggunakannya
-# from user_manual import tampilkan_user_manual
-# from ws_scan_catboost import ...
-# from tab3 import tab3 ...
 
 st.set_page_config(page_title="Prediksi AI", layout="wide")
 st.title("Prediksi 4D - AI")
@@ -60,7 +56,7 @@ with st.sidebar:
     window_per_digit = {}
     for label in DIGIT_LABELS:
         window_per_digit[label] = st.slider(
-            f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}"
+            f"{label.upper()}", 3, 30, st.session_state.get(f"win_{label}", 7), key=f"win_{label}"
         )
 
 if "angka_list" not in st.session_state:
@@ -119,17 +115,9 @@ with tab_prediksi:
                         st.error("Gagal memuat model AI. Pastikan model sudah dilatih di tab Manajemen Model.")
                 
                 elif metode == "Ensemble AI + Markov":
-                    # Fungsi ini tidak ada di ai_model.py, jadi kita panggil secara terpisah
-                    lstm_pred = top6_model(df, lokasi=selected_lokasi, model_type=model_type, return_probs=False, top_n=jumlah_digit, window_dict=window_per_digit)
-                    markov_pred, _ = top6_markov(df, top_n=jumlah_digit)
-
-                    if lstm_pred and markov_pred:
-                        result = []
-                        for i in range(4):
-                            combined = list(dict.fromkeys(lstm_pred[i] + markov_pred[i]))
-                            result.append(combined[:jumlah_digit])
-                        probs = None
-                    else:
+                    result = top6_ensemble(df, lokasi=selected_lokasi, model_type=model_type, window_dict=window_per_digit, top_n=jumlah_digit)
+                    probs = None # Ensemble tidak menghasilkan probabilitas
+                    if result is None:
                         st.error("Gagal melakukan prediksi ensemble. Pastikan model AI sudah dilatih.")
             
             if result:
@@ -192,7 +180,6 @@ with tab_manajemen:
             st.success("✅ Semua model berhasil dilatih dan disimpan.")
             st.rerun()
 
-# --- BLOK FITUR SCAN WINDOW SIZE DIAKTIFKAN DI SINI ---
 with tab_scan:
     st.subheader("Pencarian Window Size Optimal dengan Model Training")
     st.info("Proses ini akan melatih model sementara untuk setiap window size guna mencari akurasi terbaik. Proses ini bisa memakan waktu.")
@@ -220,7 +207,8 @@ with tab_scan:
                             min_ws=min_ws, max_ws=max_ws, temperature=temperature,
                             top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
                         )
-                        if best_ws:
+                        # Gunakan "is not None" untuk memastikan WS 0 pun bisa terdeteksi (meski tidak mungkin)
+                        if best_ws is not None:
                             st.success(f"WS terbaik untuk {label.upper()}: {best_ws}. Diterapkan ke sidebar.")
                             st.session_state[f"win_{label}"] = best_ws
                             hasil_scan[label] = best_ws
@@ -233,6 +221,10 @@ with tab_scan:
             for label, ws in hasil_scan.items():
                 st.metric(label=label.upper(), value=f"WS: {ws}")
 
-            st.success("Selesai! Pengaturan Window Size di sidebar telah diperbarui. Latih ulang model di tab 'Manajemen Model' untuk menerapkan perubahan.")
+            st.success("Selesai! Pengaturan Window Size di sidebar telah diperbarui.")
+            st.info("PENTING: Latih ulang model di tab 'Manajemen Model' untuk menerapkan perubahan ini.")
             st.balloons()
-            # Tidak perlu rerun agar pengguna bisa melihat hasilnya
+            
+            # --- PERBAIKAN DI SINI ---
+            # Paksa aplikasi memuat ulang untuk menerapkan state baru ke slider tanpa error.
+            st.rerun()
