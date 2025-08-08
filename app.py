@@ -11,12 +11,21 @@ from ai_model import (
     kombinasi_4d,
     find_best_window_size_with_model_true,
     build_lstm_model,
-    build_transformer_model
+    build_transformer_model,
+    top6_ensemble
 )
 from lokasi_list import lokasi_list
 
 st.set_page_config(page_title="Prediksi AI", layout="wide")
 st.title("Prediksi 4D - AI")
+
+# --- MANAJEMEN STATE UNTUK SCAN BERTAHAP ---
+if 'scan_status' not in st.session_state:
+    st.session_state.scan_status = 'idle'  # idle, scanning, finished
+if 'scan_current_digit_index' not in st.session_state:
+    st.session_state.scan_current_digit_index = 0
+if 'scan_results' not in st.session_state:
+    st.session_state.scan_results = {}
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
@@ -83,40 +92,109 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
 # ======== Tabs Utama ========
 tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
 
+# --- KODE LOGIKA PREDIKSI DIKEMBALIKAN DI SINI ---
 with tab_prediksi:
     if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
-        pass # Isi dengan logika prediksi Anda
+        max_ws_needed = max(list(window_per_digit.values()))
+        if len(df) < max_ws_needed + 1:
+            st.warning(f"❌ Data tidak cukup. Metode AI membutuhkan setidaknya {max_ws_needed + 1} baris data untuk window size {max_ws_needed}.")
+        else:
+            with st.spinner("⏳ Memproses prediksi..."):
+                result, probs = None, None
+                if metode == "Markov":
+                    result, _ = top6_markov(df, top_n=jumlah_digit)
+                elif metode == "Markov Order-2":
+                    result = top6_markov_order2(df, top_n=jumlah_digit)
+                elif metode == "Markov Gabungan":
+                    result = top6_markov_hybrid(df, top_n=jumlah_digit)
+                
+                elif metode == "LSTM AI":
+                    pred_data = top6_model(
+                        df, lokasi=selected_lokasi, model_type=model_type,  
+                        return_probs=True, temperature=temperature,  
+                        mode_prediksi=mode_prediksi, window_dict=window_per_digit,
+                        top_n=jumlah_digit
+                    )
+                    if pred_data:
+                        result, probs = pred_data
+                    else:
+                        st.error("Gagal memuat model AI. Pastikan model sudah dilatih di tab 'Manajemen Model'.")
+                
+                elif metode == "Ensemble AI + Markov":
+                    result = top6_ensemble(
+                        df, lokasi=selected_lokasi, model_type=model_type,
+                        window_dict=window_per_digit, temperature=temperature,
+                        mode_prediksi=mode_prediksi, top_n=jumlah_digit
+                    )
+                    probs = None 
+                    if result is None:
+                        st.error("Gagal melakukan prediksi ensemble. Pastikan model AI sudah dilatih.")
+            
+            if result:
+                st.subheader(f"🎯 Hasil Prediksi Top {jumlah_digit}")
+                for i, label in enumerate(["Ribuan", "Ratusan", "Puluhan", "Satuan"]):
+                    st.markdown(f"**{label}:** {', '.join(map(str, result[i]))}")
+
+                if probs:
+                    st.subheader("📊 Confidence Bar")
+                    for i, label in enumerate(DIGIT_LABELS):
+                        if result[i] and probs[i]:
+                            st.markdown(f"**{label.upper()}**")
+                            dconf = pd.DataFrame({
+                                "Digit": [str(d) for d in result[i]],
+                                "Confidence": probs[i]
+                            }).sort_values("Confidence", ascending=True)
+                            st.bar_chart(dconf.set_index("Digit"))
+
+                if metode in ["LSTM AI"]:
+                    with st.spinner("🔢 Menghitung kombinasi 4D..."):
+                        top_komb = kombinasi_4d(
+                            df, lokasi=selected_lokasi, model_type=model_type,
+                            top_n=20, min_conf=min_conf_kombinasi, power=power,
+                            mode=voting_mode, window_dict=window_per_digit,
+                            mode_prediksi=mode_prediksi,
+                            pred_n=jumlah_digit
+                        )
+                        st.subheader("💡 Kombinasi 4D Populer")
+                        if top_komb:
+                            for komb, score in top_komb:
+                                st.markdown(f"`{komb}` - Skor Keyakinan: `{score:.6f}`")
+                        else:
+                            st.info("Tidak ada kombinasi 4D yang memenuhi ambang batas keyakinan.")
 
 with tab_manajemen:
     st.subheader("Manajemen Model AI")
-    if metode not in ["LSTM AI", "Ensemble AI + Markov"]:
-        st.info("Pilih metode 'LSTM AI' atau 'Ensemble AI + Markov' di sidebar untuk mengelola model.")
-    else:
-        lokasi_id = selected_lokasi.lower().strip().replace(" ", "_")
-        
-        cols = st.columns(4)
-        for i, label in enumerate(DIGIT_LABELS):
-            with cols[i]:
-                model_path = f"saved_models/{lokasi_id}_{label}_{model_type}.h5"
-                st.markdown(f"##### {label.upper()}")
-                if os.path.exists(model_path):
-                    st.success("✅ Tersedia")
-                    if st.button("Hapus", key=f"hapus_{label}", use_container_width=True):
-                        os.remove(model_path)
-                        st.rerun()
-                else:
-                    st.warning("⚠️ Belum ada")
+    st.info("Latih model AI di sini. Jika Anda mengubah pengaturan window size (baik manual atau lewat scan), Anda harus melatih ulang model.")
+    
+    lokasi_id = selected_lokasi.lower().strip().replace(" ", "_")
+    
+    cols = st.columns(4)
+    for i, label in enumerate(DIGIT_LABELS):
+        with cols[i]:
+            model_path = f"saved_models/{lokasi_id}_{label}_{model_type}.h5"
+            st.markdown(f"##### {label.upper()}")
+            if os.path.exists(model_path):
+                st.success("✅ Tersedia")
+                if st.button("Hapus", key=f"hapus_{label}", use_container_width=True):
+                    os.remove(model_path)
+                    st.rerun()
+            else:
+                st.warning("⚠️ Belum ada")
 
-        st.markdown("---")
-        if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True):
+    st.markdown("---")
+    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+        max_ws_needed = max(list(window_per_digit.values()))
+        if len(df) < max_ws_needed + 5:
+            st.error(f"Data tidak cukup untuk melatih. Dibutuhkan setidaknya {max_ws_needed + 5} baris data.")
+        else:
             with st.spinner("🔄 Melatih semua model, ini mungkin memakan waktu..."):
                 train_and_save_model(df, selected_lokasi, window_dict=window_per_digit, model_type=model_type)
             st.success("✅ Semua model berhasil dilatih dan disimpan.")
             st.rerun()
 
 with tab_scan:
-    st.subheader("Pencarian Window Size Optimal")
-    st.info("Proses ini akan menjalankan scan untuk semua digit sekaligus dan menampilkan hasilnya. Proses ini bisa memakan waktu lama.")
+    st.subheader("Pencarian Window Size Optimal (Bertahap & Otomatis)")
+    st.info("Proses ini akan mencari WS optimal untuk setiap digit secara berurutan. Klik 'Mulai Scan' untuk memulai, aplikasi akan berjalan otomatis hingga selesai.")
 
     scan_cols = st.columns(4)
     with scan_cols[0]:
@@ -127,41 +205,73 @@ with tab_scan:
         min_acc = st.slider("Min Akurasi", 0.0, 1.0, 0.05, key="scan_min_acc")
     with scan_cols[3]:
         min_conf = st.slider("Min Confidence", 0.0, 1.0, 0.05, key="scan_min_conf")
-    
-    if st.button("🔎 Jalankan Scan untuk Semua Digit", use_container_width=True, type="primary"):
-        if len(df) < max_ws + 5:
-            st.error(f"Data tidak cukup. Dibutuhkan setidaknya {max_ws + 5} baris data.")
+
+    st.divider()
+
+    def start_scan():
+        st.session_state.scan_status = 'scanning'
+        st.session_state.scan_current_digit_index = 0
+        st.session_state.scan_results = {}
+
+    def reset_scan():
+        st.session_state.scan_status = 'idle'
+        st.session_state.scan_current_digit_index = 0
+        st.session_state.scan_results = {}
+
+    btn_cols = st.columns(2)
+    with btn_cols[0]:
+        st.button(
+            "🚀 Mulai Scan Bertahap",
+            on_click=start_scan,
+            use_container_width=True,
+            type="primary",
+            disabled=(st.session_state.scan_status == 'scanning')
+        )
+            
+    with btn_cols[1]:
+        st.button("🔄 Reset Scan", on_click=reset_scan, use_container_width=True)
+
+    if st.session_state.scan_results:
+        st.subheader("Hasil Scan Sementara")
+        res_cols = st.columns(4)
+        for i, label in enumerate(DIGIT_LABELS):
+            if label in st.session_state.scan_results:
+                ws = st.session_state.scan_results[label]
+                res_cols[i].metric(label=label.upper(), value=f"WS: {ws}")
+
+    if st.session_state.scan_status == 'scanning':
+        idx = st.session_state.scan_current_digit_index
+        
+        if idx < len(DIGIT_LABELS):
+            label = DIGIT_LABELS[idx]
+            
+            progress_placeholder = st.empty()
+            with progress_placeholder.container():
+                st.info(f"⚙️ Sedang memproses {label.upper()} ({idx + 1}/{len(DIGIT_LABELS)})... Ini mungkin perlu waktu beberapa menit.")
+                st.progress((idx) / len(DIGIT_LABELS))
+
+            best_ws, _ = find_best_window_size_with_model_true(
+                df, label, selected_lokasi, model_type=model_type,
+                min_ws=min_ws, max_ws=max_ws, temperature=temperature,
+                top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
+            )
+            
+            if best_ws is not None:
+                st.session_state[f"win_{label}"] = best_ws
+                st.session_state.scan_results[label] = best_ws
+            else:
+                st.session_state.scan_results[label] = "Gagal"
+            
+            st.session_state.scan_current_digit_index += 1
+            progress_placeholder.empty()
+            st.rerun()
         else:
-            st.subheader("Hasil Scan Window Size")
-            st.warning("Harap tunggu, proses untuk semua digit sedang berjalan...")
+            st.session_state.scan_status = 'finished'
+            st.rerun()
             
-            # Buat placeholder untuk hasil
-            results_placeholder = st.empty()
-            hasil_scan_semua = {}
-
-            for label in DIGIT_LABELS:
-                best_ws, _ = find_best_window_size_with_model_true(
-                    df, label, selected_lokasi, model_type=model_type,
-                    min_ws=min_ws, max_ws=max_ws, temperature=temperature,
-                    top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
-                )
-                
-                if best_ws is not None:
-                    hasil_scan_semua[label.upper()] = best_ws
-                else:
-                    hasil_scan_semua[label.upper()] = "Tidak Ditemukan"
-                
-                # Tampilkan hasil sementara
-                results_placeholder.json(hasil_scan_semua)
-            
-            # Tampilkan hasil akhir
-            results_placeholder.empty() # Hapus tabel sementara
-            st.success("✅ Scan Selesai!")
-            st.markdown("Berikut adalah hasil WS terbaik yang ditemukan:")
-            
-            # Tampilkan hasil akhir dalam format yang lebih baik
-            final_cols = st.columns(4)
-            for i, (label, ws) in enumerate(hasil_scan_semua.items()):
-                final_cols[i].metric(label, f"WS: {ws}")
-
-            st.info("Silakan **atur slider di sidebar secara manual** sesuai hasil di atas, lalu latih ulang model di tab 'Manajemen Model'.")
+    elif st.session_state.scan_status == 'finished':
+        st.success("🎉 Semua digit telah selesai di-scan!")
+        st.info("Pengaturan Window Size di sidebar telah diperbarui. Anda bisa melatih ulang model di tab 'Manajemen Model' sekarang.")
+        st.balloons()
+        st.session_state.scan_status = 'idle'
+        st.session_state.scan_current_digit_index = 0
