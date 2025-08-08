@@ -71,7 +71,6 @@ with st.sidebar:
 if "angka_list" not in st.session_state:
     st.session_state.angka_list = []
 
-# ... (Kode untuk mengambil data dan input manual tidak berubah) ...
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
@@ -95,20 +94,22 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     st.session_state.angka_list = [x.strip() for x in riwayat_input.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
     df = pd.DataFrame({"angka": st.session_state.angka_list})
 
-
 # ======== Tabs Utama ========
 tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
 
-# ... (Tab Prediksi dan Manajemen tidak berubah) ...
+# Placeholder untuk tab yang tidak ditampilkan
 with tab_prediksi:
-    pass
-with tab_manajemen:
-    pass
+    st.subheader("Prediksi & Hasil")
+    # ... (Kode tab prediksi tetap sama)
 
-# --- BLOK SCAN WINDOW SIZE DIPERBAIKI DENGAN LOGIKA BERTAHAP ---
+with tab_manajemen:
+    st.subheader("Manajemen Model AI")
+    # ... (Kode tab manajemen tetap sama)
+
+# --- BLOK SCAN WINDOW SIZE DIPERBAIKI DENGAN LOGIKA CALLBACK ---
 with tab_scan:
     st.subheader("Pencarian Window Size Optimal (Bertahap & Otomatis)")
-    st.info("Proses ini akan mencari WS optimal untuk setiap digit secara berurutan dan otomatis. Anda akan melihat progres setelah setiap digit selesai diproses.")
+    st.info("Proses ini akan mencari WS optimal untuk setiap digit secara berurutan. Klik 'Mulai Scan' untuk memulai, aplikasi akan berjalan otomatis hingga selesai.")
 
     scan_cols = st.columns(4)
     with scan_cols[0]:
@@ -122,24 +123,29 @@ with tab_scan:
 
     st.divider()
 
-    # --- Tombol untuk memulai dan mereset scan ---
+    # --- Fungsi Callback untuk mengubah state ---
+    def start_scan():
+        st.session_state.scan_status = 'scanning'
+        st.session_state.scan_current_digit_index = 0
+        st.session_state.scan_results = {}
+
+    def reset_scan():
+        st.session_state.scan_status = 'idle'
+        st.session_state.scan_current_digit_index = 0
+        st.session_state.scan_results = {}
+
     btn_cols = st.columns(2)
     with btn_cols[0]:
-        if st.session_state.scan_status == 'idle':
-            if st.button("🚀 Mulai Scan Bertahap", use_container_width=True, type="primary"):
-                st.session_state.scan_status = 'scanning'
-                st.session_state.scan_current_digit_index = 0
-                st.session_state.scan_results = {}
-                st.rerun()
-        else:
-            st.button("... Sedang Memproses ...", use_container_width=True, disabled=True)
+        st.button(
+            "🚀 Mulai Scan Bertahap",
+            on_click=start_scan,
+            use_container_width=True,
+            type="primary",
+            disabled=(st.session_state.scan_status == 'scanning')
+        )
             
     with btn_cols[1]:
-        if st.button("🔄 Reset Scan", use_container_width=True):
-            st.session_state.scan_status = 'idle'
-            st.session_state.scan_current_digit_index = 0
-            st.session_state.scan_results = {}
-            st.rerun()
+        st.button("🔄 Reset Scan", on_click=reset_scan, use_container_width=True)
 
     # --- Menampilkan hasil yang sudah terkumpul ---
     if st.session_state.scan_results:
@@ -150,29 +156,38 @@ with tab_scan:
                 ws = st.session_state.scan_results[label]
                 res_cols[i].metric(label=label.upper(), value=f"WS: {ws}")
 
-    # --- Logika utama untuk menjalankan scan secara otomatis ---
+    # --- Logika utama untuk menjalankan scan, hanya jika statusnya 'scanning' ---
     if st.session_state.scan_status == 'scanning':
         idx = st.session_state.scan_current_digit_index
         
         if idx < len(DIGIT_LABELS):
             label = DIGIT_LABELS[idx]
             
-            with st.spinner(f"Sedang memproses {label.upper()} ({idx + 1}/{len(DIGIT_LABELS)})... Ini mungkin perlu waktu beberapa menit."):
-                best_ws, _ = find_best_window_size_with_model_true(
-                    df, label, selected_lokasi, model_type=model_type,
-                    min_ws=min_ws, max_ws=max_ws, temperature=temperature,
-                    top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
-                )
-                
-                if best_ws is not None:
-                    st.session_state[f"win_{label}"] = best_ws
-                    st.session_state.scan_results[label] = best_ws
-                else:
-                    st.session_state.scan_results[label] = "Gagal"
-                
-                st.session_state.scan_current_digit_index += 1
-                st.rerun()
+            # Tampilkan pesan proses
+            progress_placeholder = st.empty()
+            with progress_placeholder.container():
+                st.info(f"⚙️ Sedang memproses {label.upper()} ({idx + 1}/{len(DIGIT_LABELS)})... Ini mungkin perlu waktu beberapa menit.")
+                st.progress((idx) / len(DIGIT_LABELS))
+
+            best_ws, _ = find_best_window_size_with_model_true(
+                df, label, selected_lokasi, model_type=model_type,
+                min_ws=min_ws, max_ws=max_ws, temperature=temperature,
+                top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
+            )
+            
+            if best_ws is not None:
+                st.session_state[f"win_{label}"] = best_ws
+                st.session_state.scan_results[label] = best_ws
+            else:
+                st.session_state.scan_results[label] = "Gagal"
+            
+            # Pindah ke digit selanjutnya
+            st.session_state.scan_current_digit_index += 1
+            # Hapus placeholder dan rerun untuk proses selanjutnya
+            progress_placeholder.empty()
+            st.rerun()
         else:
+            # Jika semua sudah selesai
             st.session_state.scan_status = 'finished'
             st.rerun()
             
@@ -180,6 +195,6 @@ with tab_scan:
         st.success("🎉 Semua digit telah selesai di-scan!")
         st.info("Pengaturan Window Size di sidebar telah diperbarui. Anda bisa melatih ulang model di tab 'Manajemen Model' sekarang.")
         st.balloons()
-        # Reset status agar bisa scan lagi nanti
+        # Reset status setelah selesai
         st.session_state.scan_status = 'idle'
         st.session_state.scan_current_digit_index = 0
