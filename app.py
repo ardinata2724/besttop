@@ -23,13 +23,13 @@ from lokasi_list import lokasi_list
 st.set_page_config(page_title="Prediksi AI", layout="wide")
 st.title("Prediksi 4D - AI")
 
-# --- PERBAIKAN STATE MANAGEMENT DITAMBAHKAN DI SINI ---
-# Langkah 3: Terapkan hasil scan dari session_state sementara SEBELUM widget dirender.
-if 'scan_results_to_apply' in st.session_state:
-    for key, value in st.session_state.scan_results_to_apply.items():
-        st.session_state[key] = value
-    # Hapus state sementara setelah diterapkan
-    del st.session_state.scan_results_to_apply
+# --- MANAJEMEN STATE UNTUK SCAN BERTAHAP ---
+if 'scan_status' not in st.session_state:
+    st.session_state.scan_status = 'idle'  # idle, scanning, finished
+if 'scan_current_digit_index' not in st.session_state:
+    st.session_state.scan_current_digit_index = 0
+if 'scan_results' not in st.session_state:
+    st.session_state.scan_results = {}
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
@@ -64,7 +64,6 @@ with st.sidebar:
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
-        # Slider akan mengambil nilai dari st.session_state yang sudah diperbarui di atas
         window_per_digit[label] = st.slider(
             f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}"
         )
@@ -72,6 +71,7 @@ with st.sidebar:
 if "angka_list" not in st.session_state:
     st.session_state.angka_list = []
 
+# ... (Kode untuk mengambil data dan input manual tidak berubah) ...
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
@@ -95,22 +95,20 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     st.session_state.angka_list = [x.strip() for x in riwayat_input.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
     df = pd.DataFrame({"angka": st.session_state.angka_list})
 
+
 # ======== Tabs Utama ========
 tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
 
-# ... (Tab Prediksi dan Manajemen Model tidak berubah, kodenya tetap sama) ...
+# ... (Tab Prediksi dan Manajemen tidak berubah) ...
 with tab_prediksi:
-    # ... (Isi tab ini sama seperti sebelumnya) ...
     pass
-
 with tab_manajemen:
-    # ... (Isi tab ini sama seperti sebelumnya) ...
     pass
 
-# --- BLOK SCAN WINDOW SIZE DIPERBAIKI SECARA TOTAL ---
+# --- BLOK SCAN WINDOW SIZE DIPERBAIKI DENGAN LOGIKA BERTAHAP ---
 with tab_scan:
-    st.subheader("Pencarian Window Size Optimal dengan Model Training")
-    st.info("Proses ini akan melatih model sementara untuk setiap window size guna mencari akurasi terbaik. Proses ini bisa memakan waktu.")
+    st.subheader("Pencarian Window Size Optimal (Bertahap & Otomatis)")
+    st.info("Proses ini akan mencari WS optimal untuk setiap digit secara berurutan dan otomatis. Anda akan melihat progres setelah setiap digit selesai diproses.")
 
     scan_cols = st.columns(4)
     with scan_cols[0]:
@@ -118,31 +116,70 @@ with tab_scan:
     with scan_cols[1]:
         max_ws = st.number_input("Max WS", min_ws + 1, 30, 15, key="scan_max_ws")
     with scan_cols[2]:
-        min_acc = st.slider("Min Akurasi", 0.0, 1.0, 0.05, key="scan_min_acc") # Default diturunkan
+        min_acc = st.slider("Min Akurasi", 0.0, 1.0, 0.05, key="scan_min_acc")
     with scan_cols[3]:
-        min_conf = st.slider("Min Confidence", 0.0, 1.0, 0.05, key="scan_min_conf") # Default diturunkan
-    
-    if st.button("🔎 Scan Semua Digit", use_container_width=True, type="primary"):
-        if len(df) < max_ws + 5:
-            st.error(f"Data tidak cukup. Dibutuhkan setidaknya {max_ws + 5} baris data.")
-        else:
-            # Langkah 1: Jalankan scan dan simpan hasilnya di dictionary LOKAL
-            hasil_scan_lokal = {}
-            for label in DIGIT_LABELS:
-                with st.expander(f"Log Scan untuk {label.upper()}", expanded=True):
-                    with st.spinner(f"Mencari WS terbaik untuk {label.upper()}..."):
-                        best_ws, top_n_digits = find_best_window_size_with_model_true(
-                            df, label, selected_lokasi, model_type=model_type,
-                            min_ws=min_ws, max_ws=max_ws, temperature=temperature,
-                            top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
-                        )
-                        if best_ws is not None:
-                            st.success(f"WS terbaik untuk {label.upper()}: {best_ws}.")
-                            hasil_scan_lokal[f"win_{label}"] = best_ws
-                        else:
-                            st.warning(f"Tidak ditemukan WS yang cocok untuk {label.upper()} dengan kriteria yang diberikan.")
-            
-            # Langkah 2: Jika ada hasil, simpan ke state SEMENTARA dan paksa RERUN
-            if hasil_scan_lokal:
-                st.session_state.scan_results_to_apply = hasil_scan_lokal
+        min_conf = st.slider("Min Confidence", 0.0, 1.0, 0.05, key="scan_min_conf")
+
+    st.divider()
+
+    # --- Tombol untuk memulai dan mereset scan ---
+    btn_cols = st.columns(2)
+    with btn_cols[0]:
+        if st.session_state.scan_status == 'idle':
+            if st.button("🚀 Mulai Scan Bertahap", use_container_width=True, type="primary"):
+                st.session_state.scan_status = 'scanning'
+                st.session_state.scan_current_digit_index = 0
+                st.session_state.scan_results = {}
                 st.rerun()
+        else:
+            st.button("... Sedang Memproses ...", use_container_width=True, disabled=True)
+            
+    with btn_cols[1]:
+        if st.button("🔄 Reset Scan", use_container_width=True):
+            st.session_state.scan_status = 'idle'
+            st.session_state.scan_current_digit_index = 0
+            st.session_state.scan_results = {}
+            st.rerun()
+
+    # --- Menampilkan hasil yang sudah terkumpul ---
+    if st.session_state.scan_results:
+        st.subheader("Hasil Scan Sementara")
+        res_cols = st.columns(4)
+        for i, label in enumerate(DIGIT_LABELS):
+            if label in st.session_state.scan_results:
+                ws = st.session_state.scan_results[label]
+                res_cols[i].metric(label=label.upper(), value=f"WS: {ws}")
+
+    # --- Logika utama untuk menjalankan scan secara otomatis ---
+    if st.session_state.scan_status == 'scanning':
+        idx = st.session_state.scan_current_digit_index
+        
+        if idx < len(DIGIT_LABELS):
+            label = DIGIT_LABELS[idx]
+            
+            with st.spinner(f"Sedang memproses {label.upper()} ({idx + 1}/{len(DIGIT_LABELS)})... Ini mungkin perlu waktu beberapa menit."):
+                best_ws, _ = find_best_window_size_with_model_true(
+                    df, label, selected_lokasi, model_type=model_type,
+                    min_ws=min_ws, max_ws=max_ws, temperature=temperature,
+                    top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
+                )
+                
+                if best_ws is not None:
+                    st.session_state[f"win_{label}"] = best_ws
+                    st.session_state.scan_results[label] = best_ws
+                else:
+                    st.session_state.scan_results[label] = "Gagal"
+                
+                st.session_state.scan_current_digit_index += 1
+                st.rerun()
+        else:
+            st.session_state.scan_status = 'finished'
+            st.rerun()
+            
+    elif st.session_state.scan_status == 'finished':
+        st.success("🎉 Semua digit telah selesai di-scan!")
+        st.info("Pengaturan Window Size di sidebar telah diperbarui. Anda bisa melatih ulang model di tab 'Manajemen Model' sekarang.")
+        st.balloons()
+        # Reset status agar bisa scan lagi nanti
+        st.session_state.scan_status = 'idle'
+        st.session_state.scan_current_digit_index = 0
