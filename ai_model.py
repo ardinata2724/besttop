@@ -86,7 +86,6 @@ def build_lstm_model(input_len, embed_dim=32, lstm_units=128, attention_heads=4,
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
     return model
 
-# --- FUNGSI YANG HILANG DITAMBAHKAN KEMBALI ---
 def build_transformer_model(input_len, embed_dim=32, heads=4, temperature=0.5):
     inputs = Input(shape=(input_len,))
     x = Embedding(input_dim=10, output_dim=embed_dim)(inputs)
@@ -114,7 +113,7 @@ def train_and_save_model(df, lokasi, window_dict, model_type="lstm"):
             continue
         
         X, y_dict = preprocess_data(df, window_size=window_size)
-        if label not in y_dict or y_dict[label].shape[0] < 10: # Pastikan data cukup untuk split
+        if label not in y_dict or y_dict[label].shape[0] < 10:
             continue
         
         y = y_dict[label]
@@ -128,7 +127,6 @@ def train_and_save_model(df, lokasi, window_dict, model_type="lstm"):
         else:
             model = build_transformer_model(X.shape[1]) if model_type == "transformer" else build_lstm_model(X.shape[1])
 
-        # --- PERBAIKAN LOGIKA TRAINING UNTUK MENGHINDARI WARNING ---
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
         callbacks = [
@@ -142,7 +140,6 @@ def train_and_save_model(df, lokasi, window_dict, model_type="lstm"):
                   callbacks=callbacks)
         model.save(model_path)
 
-
 def top6_model(df, lokasi=None, model_type="lstm", return_probs=False, temperature=0.5, window_dict=None, mode_prediksi="hybrid", threshold=0.001, top_n=6):
     results, probs = [], []
     loc_id = lokasi.lower().replace(" ", "_")
@@ -150,11 +147,11 @@ def top6_model(df, lokasi=None, model_type="lstm", return_probs=False, temperatu
         window_size = window_dict.get(label, 7)
         X, _ = preprocess_data(df, window_size=window_size)
         if X.shape[0] == 0:
-            return None # Kembalikan None jika tidak ada data
+            return None
         
         path = f"saved_models/{loc_id}_{label}_{model_type}.h5"
         if not os.path.exists(path):
-            return None # Kembalikan None jika model tidak ada
+            return None
         
         try:
             model = load_model(path, compile=False, custom_objects={"PositionalEncoding": PositionalEncoding})
@@ -177,10 +174,8 @@ def top6_model(df, lokasi=None, model_type="lstm", return_probs=False, temperatu
                 sorted_scores = sorted(score_dict.items(), key=lambda x: -x[1])
                 top_n_digits = [d for d, score in sorted_scores if avg[d] >= threshold][:top_n]
 
-            # Pastikan jumlahnya N
             final_digits = list(dict.fromkeys(top_n_digits))[:top_n]
-            current_len = len(final_digits)
-            if current_len < top_n:
+            if len(final_digits) < top_n:
                  all_possible = list(range(10))
                  random.shuffle(all_possible)
                  for digit in all_possible:
@@ -198,6 +193,200 @@ def top6_model(df, lokasi=None, model_type="lstm", return_probs=False, temperatu
             
     return (results, probs) if return_probs else results
 
-# ... Sisa fungsi di ai_model.py (seperti kombinasi_4d, top6_ensemble, dll) tetap sama seperti sebelumnya ...
-# (Untuk keringkasan, saya tidak menyertakan ulang sisa kode yang tidak berubah)
-# Pastikan Anda menggunakan versi lengkap dari file ai_model.py yang saya berikan di respons sebelumnya.
+def kombinasi_4d(df, lokasi, model_type="lstm", top_n=10, min_conf=0.0001, power=1.5, mode='product', window_dict=None, mode_prediksi="hybrid", pred_n=6):
+    pred_data = top6_model(df, lokasi=lokasi, model_type=model_type, return_probs=True,
+                           window_dict=window_dict, mode_prediksi=mode_prediksi, top_n=pred_n)
+    if pred_data is None:
+        return []
+        
+    result, probs = pred_data
+    if not all(result):
+        return []
+    
+    combinations = list(product(*result))
+    scores = []
+    for combo in combinations:
+        digit_scores = []
+        valid = True
+        for i in range(4):
+            try:
+                idx = result[i].index(combo[i])
+                digit_scores.append(probs[i][idx] ** power)
+            except ValueError:
+                valid = False
+                break
+        if not valid:
+            continue
+        
+        score = np.prod(digit_scores) if mode == 'product' else np.mean(digit_scores)
+        if score >= min_conf:
+            scores.append(("".join(map(str, combo)), score))
+            
+    return sorted(scores, key=lambda x: -x[1])[:top_n]
+
+def top6_ensemble(df, lokasi, model_type="lstm", lstm_weight=0.6, markov_weight=0.4, window_dict=None, temperature=0.5, mode_prediksi="hybrid", top_n=6):
+    lstm_result = top6_model(
+        df,
+        lokasi=lokasi,
+        model_type=model_type,
+        return_probs=False,
+        window_dict=window_dict,
+        temperature=temperature,
+        mode_prediksi=mode_prediksi,
+        top_n=top_n
+    )
+    
+    markov_result, _ = top6_markov(df, top_n=top_n)
+    
+    if lstm_result is None or markov_result is None or not all(lstm_result) or not all(markov_result):
+        return None
+
+    ensemble = []
+    for i in range(4):
+        scores = {}
+        
+        for rank, digit in enumerate(lstm_result[i]):
+            scores[digit] = scores.get(digit, 0) + lstm_weight * (1.0 / (1 + rank))
+            
+        for rank, digit in enumerate(markov_result[i]):
+            scores[digit] = scores.get(digit, 0) + markov_weight * (1.0 / (1 + rank))
+
+        top_n_digits = sorted(scores.items(), key=lambda x: -x[1])[:top_n]
+        ensemble.append([x[0] for x in top_n_digits])
+        
+    return ensemble
+    
+def evaluate_lstm_accuracy_all_digits(df, lokasi, model_type="lstm", window_size=7, top_n=6):
+    if isinstance(window_size, int):
+        window_dict = {label: window_size for label in DIGIT_LABELS}
+    else:
+        window_dict = window_size
+
+    acc_top1_list, acc_top_n_list = [], []
+    loc_id = lokasi.lower().strip().replace(" ", "_")
+
+    for label in DIGIT_LABELS:
+        ws = window_dict.get(label, 7)
+        X, y_dict = preprocess_data(df, window_size=ws)
+        if X.shape[0] == 0:
+            continue
+
+        y_true = y_dict[label]
+        path = f"saved_models/{loc_id}_{label}_{model_type}.h5"
+        if not os.path.exists(path):
+            continue
+
+        try:
+            model = load_model(path, compile=True, custom_objects={"PositionalEncoding": PositionalEncoding})
+            if model.input_shape[1] != X.shape[1]:
+                continue
+
+            acc_top1 = model.evaluate(X, y_true, verbose=0)[1]
+            acc_top_n = evaluate_top_n_accuracy(model, X, y_true, n=top_n)
+            acc_top1_list.append(acc_top1)
+            acc_top_n_list.append(acc_top_n)
+        except Exception as e:
+            print(f"[ERROR EVALUATE {label}] {e}")
+
+    return acc_top1_list, acc_top_n_list, []
+
+def evaluate_top_n_accuracy(model, X, y_true, n=6):
+    try:
+        y_pred = model.predict(X, verbose=0)
+        y_true_labels = np.argmax(y_true, axis=1)
+        top_n_preds = np.argsort(y_pred, axis=1)[:, -n:]
+        correct = np.array([
+            true_label in top_n for true_label, top_n in zip(y_true_labels, top_n_preds)
+        ])
+        return np.mean(correct)
+    except Exception as e:
+        print(f"[ERROR evaluate_top_n_accuracy] {e}")
+        return 0.0
+
+def find_best_window_size_with_model_true(df, label, lokasi, model_type="lstm", min_ws=4, max_ws=20,
+                                          temperature=1.0, use_cv=False, cv_folds=5, seed=42,
+                                          min_acc=0.60, min_conf=0.60, top_n=6):
+    tf.random.set_seed(seed)
+    np.random.seed(seed)
+
+    best_ws = None
+    best_score = -1
+
+    table_data = []
+    all_scores = []
+    
+    st.markdown(f"### 🔍 Pencarian WS - {label.upper()} (Top-{top_n})")
+    status = st.empty()
+    ws_range = list(range(min_ws, max_ws + 1))
+
+    for idx, ws in enumerate(ws_range):
+        try:
+            status.info(f"🧠 Mencoba WS={ws} ({idx+1}/{len(ws_range)}) untuk **{label.upper()}**...")
+            X, y_dict = preprocess_data(df, window_size=ws)
+            if label not in y_dict or y_dict[label].shape[0] < 10:
+                continue
+
+            y = y_dict[label]
+            
+            # Non-CV path for simplicity
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=seed)
+            model = build_transformer_model(X.shape[1]) if model_type == "transformer" else build_lstm_model(X.shape[1])
+            model.compile(optimizer="adam",
+                          loss="categorical_crossentropy",
+                          metrics=["accuracy", TopKCategoricalAccuracy(k=top_n)])
+            
+            model.fit(
+                X_train, y_train,
+                epochs=15, batch_size=32, verbose=0,
+                validation_data=(X_val, y_val),
+                callbacks=[EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)]
+            )
+            
+            eval_result = model.evaluate(X_val, y_val, verbose=0)
+            val_acc = eval_result[1]
+            top_n_acc = eval_result[2]
+
+            preds = model.predict(X_val, verbose=0)
+            avg_conf = np.mean(np.sort(preds, axis=1)[:, -top_n:])
+
+            if val_acc < min_acc or avg_conf < min_conf:
+                continue
+
+            score = (val_acc * 0.35) + (top_n_acc * 0.35) + (avg_conf * 0.30)
+            
+            # Get top N digits from last prediction for display
+            last_pred = model.predict(X[-1:], verbose=0)[0]
+            top_n_digits_pred = np.argsort(last_pred)[::-1][:top_n]
+            
+            table_data.append((ws, round(val_acc*100, 2), round(top_n_acc*100, 2), round(avg_conf*100, 2), top_n_digits_pred))
+            all_scores.append((ws, val_acc, top_n_acc, avg_conf, top_n_digits_pred, score))
+
+            if score > best_score:
+                best_score = score
+                best_ws = ws
+
+        except Exception as e:
+            st.warning(f"[GAGAL WS={ws}] {e}")
+            continue
+
+    status.success("✅ Selesai semua WS")
+
+    if not all_scores:
+        st.error("Tidak ada Window Size yang memenuhi kriteria.")
+        return None, []
+
+    # Get top N digits from the best 5 WS runs
+    top5_ws = sorted(all_scores, key=lambda x: -x[5])[:5]
+    top_n_from_top5_ws = []
+    for _, _, _, _, top_n_digits, _ in top5_ws:
+        top_n_from_top5_ws.extend(top_n_digits)
+
+    final_top_n_digits = [x[0] for x in Counter(top_n_from_top5_ws).most_common(top_n)]
+
+    if table_data:
+        df_table = pd.DataFrame(table_data, columns=["Window Size", "Acc (%)", f"Top-{top_n} Acc (%)", "Conf (%)", f"Top-{top_n}"])
+        st.dataframe(df_table.sort_values("Window Size"))
+
+    st.success(f"✅ {label.upper()} - WS terbaik yang ditemukan: {best_ws}")
+    
+    return best_ws, final_top_n_digits
