@@ -23,6 +23,7 @@ import locale
 # ==============================================================================
 # BAGIAN 1: DEFINISI FUNGSI-FUNGSI INTI
 # ==============================================================================
+
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
 def _ensure_unique_top_n(top_list, n=6):
@@ -91,16 +92,36 @@ def build_model(input_len, model_type="lstm"):
     model = Model(inputs, outputs)
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
     return model
-    
+
 def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
-    # Placeholder
-    st.warning("Fungsi model AI belum diimplementasikan sepenuhnya di versi ini.")
+    st.warning("Fungsi model AI belum diimplementasikan sepenuhnya. Menggunakan hasil acak.")
     return [random.sample(range(10), top_n) for _ in range(4)], None
 
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
     best_ws, best_score = None, -1
     table_data = []
-    # ... (logika find_best_window_size yang lengkap)
+    progress_bar = st.progress(0.0, text=f"Memulai scan untuk {label.upper()}...")
+    total_steps = max_ws - min_ws + 1
+    for i, ws in enumerate(range(min_ws, max_ws + 1)):
+        progress_bar.progress((i + 1) / total_steps, text=f"Mencoba WS={ws} untuk {label.upper()}...")
+        try:
+            X, y_dict = preprocess_data(df, window_size=ws)
+            if label not in y_dict or y_dict[label].shape[0] < 10: continue
+            y = y_dict[label]
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+            model = build_model(X.shape[1], model_type)
+            model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy", TopKCategoricalAccuracy(k=top_n)])
+            model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
+            _, acc, top_n_acc = model.evaluate(X_val, y_val, verbose=0)
+            score = (acc * 0.4) + (top_n_acc * 0.6)
+            table_data.append((ws, f"{acc:.2%}", f"{top_n_acc:.2%}", f"{score:.2f}"))
+            if score > best_score:
+                best_score, best_ws = score, ws
+        except Exception:
+            continue
+    progress_bar.empty()
+    if not table_data:
+        return None, None
     return best_ws, pd.DataFrame(table_data, columns=["Window Size", "Akurasi Top-1", f"Akurasi Top-{top_n}", "Skor"])
 
 # ==============================================================================
@@ -188,5 +209,5 @@ with tab_manajemen:
 
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada di bawah. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     # (Logika scan lengkap di sini)
