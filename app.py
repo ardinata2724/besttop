@@ -171,7 +171,7 @@ with tab_prediksi:
                     ]
 
                     acak_4d_list = []
-                    for _ in range(2000):
+                    for _ in range(3000):
                         chosen_pattern = random.choice(patterns)
                         d1 = random.choice(chosen_pattern[0])
                         d2 = random.choice(chosen_pattern[1])
@@ -180,7 +180,7 @@ with tab_prediksi:
                         acak_4d_list.append(f"{d1}{d2}{d3}{d4}")
                     
                     output_string = " * ".join(acak_4d_list)
-                    st.text_area(f"2000 Kombinasi Acak (Pola Rotasi)", output_string, height=300)
+                    st.text_area(f"3000 Kombinasi Acak (Pola Rotasi)", output_string, height=300)
                 else:
                     st.warning("Tidak bisa menghasilkan angka acak karena hasil prediksi tidak lengkap.")
 
