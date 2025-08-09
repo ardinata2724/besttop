@@ -18,6 +18,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.metrics import TopKCategoricalAccuracy
 from datetime import datetime
+import locale
 
 # ==============================================================================
 # BAGIAN 1: DEFINISI FUNGSI-FUNGSI INTI
@@ -90,7 +91,7 @@ def build_model(input_len, model_type="lstm"):
     model = Model(inputs, outputs)
     model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
     return model
-
+    
 def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
     # Placeholder
     st.warning("Fungsi model AI belum diimplementasikan sepenuhnya di versi ini.")
@@ -183,9 +184,9 @@ with tab_prediksi:
 with tab_manajemen:
     st.subheader("Manajemen Model AI")
     st.info("Latih atau hapus model AI di sini.")
-    # ... (Logika manajemen lengkap di sini)
+    # (Logika manajemen lengkap di sini)
 
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada di bawah. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
-    # ... (Logika scan lengkap di sini)
+    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    # (Logika scan lengkap di sini)
