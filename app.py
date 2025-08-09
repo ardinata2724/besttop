@@ -138,13 +138,26 @@ with st.sidebar:
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
-        # ... (Logika ambil data yang sudah benar)
-        pass
-with col2: st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
+        try:
+            with st.spinner("🔄 Mengambil data..."):
+                url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
+                headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("data"):
+                    angka_api = [d["result"] for d in data["data"] if len(str(d.get("result", ""))) == 4 and str(d.get("result", "")).isdigit()]
+                    st.session_state.angka_list = angka_api
+                    st.success(f"{len(angka_api)} angka berhasil diambil.")
+                else:
+                    st.error("API tidak mengembalikan data yang valid.")
+        except Exception as e:
+            st.error(f"Gagal mengambil data dari API: {e}")
 
+with col2: st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
 with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_input = "\n".join(st.session_state.get("angka_list", []))
-    riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250)
+    riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250, key="manual_input")
     if riwayat_text != riwayat_input:
         st.session_state.angka_list = [x.strip() for x in riwayat_text.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
         st.rerun()
@@ -174,5 +187,5 @@ with tab_manajemen:
 
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada di bawah. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     # ... (Logika scan lengkap di sini)
