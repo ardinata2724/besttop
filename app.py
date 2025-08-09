@@ -23,8 +23,7 @@ from datetime import datetime
 # BAGIAN 1: DEFINISI FUNGSI-FUNGSI INTI
 # ==============================================================================
 
-# --- FUNGSI BARU UNTUK LIVE RESULT ---
-@st.cache_data(ttl=600) # Cache data selama 600 detik (10 menit)
+@st.cache_data(ttl=600)
 def fetch_live_results(pasaran_list):
     results = []
     headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
@@ -36,7 +35,6 @@ def fetch_live_results(pasaran_list):
             data = response.json()
             if data.get("data"):
                 latest_result = data["data"][0]
-                # Format tanggal dari YYYY-MM-DD ke DD-MM-YYYY
                 tanggal = datetime.strptime(latest_result['tanggal'], '%Y-%m-%d').strftime('%d-%m-%Y')
                 results.append({
                     "Pasaran": pasaran.capitalize(),
@@ -45,21 +43,12 @@ def fetch_live_results(pasaran_list):
                 })
             else:
                 results.append({"Pasaran": pasaran.capitalize(), "Tanggal": "-", "Hasil": "-"})
-        except requests.exceptions.RequestException:
+        except Exception:
             results.append({"Pasaran": pasaran.capitalize(), "Tanggal": "Error", "Hasil": "Gagal"})
-        except (KeyError, IndexError):
-            results.append({"Pasaran": pasaran.capitalize(), "Tanggal": "-", "Hasil": "-"})
     return results
 
-# ... (Sisa fungsi-fungsi inti lainnya tetap sama)
-def _ensure_unique_top_n(top_list, n=6):
-    # ...
-    pass
-def top6_markov(df, top_n=6):
-    # ...
-    pass
-# ... dan seterusnya untuk semua fungsi AI ...
-
+# ... (Semua fungsi inti lainnya tetap ada di sini, tidak perlu diubah)
+DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
 # ==============================================================================
 # BAGIAN 2: APLIKASI STREAMLIT UTAMA
@@ -73,23 +62,15 @@ try:
 except ImportError:
     lokasi_list = ["Taipei", "NCD", "Cambodia", "Bullseye", "Sydney", "Sdy Lotto", "China", "Japan", "Singapore", "Mongolia", "Pcso", "Taiwan", "Osaka", "Nusantara", "Hongkong", "Hkg Lotto"]
 
-# --- Panggil fungsi live result di awal ---
-live_results_data = fetch_live_results(lokasi_list)
-
 # Inisialisasi state
-if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
 for label in DIGIT_LABELS:
-    if f"win_{label}" not in st.session_state: st.session_state[f"win_{label}"] = 7
-if "angka_list" not in st.session_state: st.session_state.angka_list = []
+    if f"win_{label}" not in st.session_state:
+        st.session_state[f"win_{label}"] = 7
+if "angka_list" not in st.session_state:
+    st.session_state.angka_list = []
 
+# --- UI Sidebar ---
 with st.sidebar:
-    # --- TAMPILKAN LIVE RESULT DI SINI ---
-    st.markdown("<h4 style='color: lime; text-align: center;'>LIVE RESULT</h4>", unsafe_allow_html=True)
-    df_live = pd.DataFrame(live_results_data)
-    st.table(df_live)
-    st.markdown("---")
-    
-    # --- Sisa Pengaturan Sidebar ---
     st.header("⚙️ Pengaturan")
     selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
     selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
@@ -104,6 +85,17 @@ with st.sidebar:
     for label in DIGIT_LABELS:
         window_per_digit[label] = st.slider(f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}")
 
+    st.markdown("---") # Pemisah
+
+    # --- TAMPILKAN LIVE RESULT DI SINI (DI BAWAH) ---
+    st.subheader("🔴 Live Result")
+    live_results_data = fetch_live_results(lokasi_list)
+    if live_results_data:
+        df_live = pd.DataFrame(live_results_data)
+        st.table(df_live)
+    else:
+        st.warning("Gagal memuat live result.")
+
     # --- Skrip untuk refresh otomatis ---
     refresh_interval = 600  # 10 menit
     js_code = f"""
@@ -115,9 +107,8 @@ with st.sidebar:
     """
     st.html(js_code, height=0, width=0)
 
-
-# --- Sisa UI dan Logika Aplikasi (tidak ada perubahan signifikan) ---
-# ... (Kode untuk Ambil Data, Edit Manual, dan semua Tab tetap sama) ...
+# --- Sisa UI dan Logika Aplikasi (tidak ada perubahan) ---
+# ... (Kode untuk Ambil Data, Edit Manual, dan semua Tab) ...
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
