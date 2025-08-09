@@ -275,12 +275,36 @@ with tab_scan:
                 best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit)
                 st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
                 st.rerun()
+            
+            # ===== BLOK KODE YANG DIUBAH DIMULAI DI SINI =====
             elif isinstance(data, dict):
-                if data.get("table") is not None and not data["table"].empty:
-                    st.dataframe(data["table"])
+                result_df = data.get("table")
+                if result_df is not None and not result_df.empty:
+                    # 1. Tetap tampilkan tabel seperti biasa
+                    st.dataframe(result_df)
+
+                    # 2. Tambahkan area teks yang bisa disalin untuk kolom Top-N
+                    st.markdown("---")
+                    st.markdown("👇 **Salin Hasil dari Kolom Top-N**")
+                    
+                    # Ambil nama kolom secara dinamis (misal: "Top-7")
+                    top_n_column_name = f"Top-{jumlah_digit}"
+
+                    # Pastikan kolomnya ada sebelum diekstrak
+                    if top_n_column_name in result_df.columns:
+                        # Gabungkan semua baris dari kolom tersebut menjadi satu teks
+                        copyable_text = "\n".join(result_df[top_n_column_name].astype(str))
+                        st.text_area(
+                            "Klik di dalam kotak di bawah lalu tekan Ctrl+A dan Ctrl+C untuk menyalin semua baris.",
+                            value=copyable_text,
+                            height=250
+                        )
+
+                    # 3. Tampilkan kembali rekomendasi WS terbaik
                     if data["ws"] is not None:
                         st.success(f"✅ WS terbaik yang disarankan: {data['ws']}")
                     else:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
                     st.warning("Tidak ada hasil yang ditemukan.")
+            # ===== BLOK KODE YANG DIUBAH SELESAI DI SINI =====
