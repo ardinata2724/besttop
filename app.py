@@ -236,7 +236,7 @@ with tab_prediksi:
                     ribuan, ratusan, puluhan, satuan = result[0], result[1], result[2], result[3]
                     patterns = [(ribuan,ratusan,puluhan,satuan), (ratusan,puluhan,satuan,ribuan), (puluhan,satuan,ribuan,ratusan), (satuan,ribuan,ratusan,puluhan)]
                     acak_4d_list = []
-                    for _ in range(2000): # Jumlah 2000 baris
+                    for _ in range(3000): # Jumlah 2000 baris
                         chosen_pattern = random.choice(patterns)
                         d1, d2, d3, d4 = random.choice(chosen_pattern[0]), random.choice(chosen_pattern[1]), random.choice(chosen_pattern[2]), random.choice(chosen_pattern[3])
                         acak_4d_list.append(f"{d1}{d2}{d3}{d4}")
