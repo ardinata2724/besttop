@@ -143,7 +143,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
 # BAGIAN 2: APLIKASI STREAMLIT UTAMA
 # ==============================================================================
 st.set_page_config(page_title="Prediksi AI", layout="wide")
-st.title("Prediksi 4D - AI")
+st.title("Prediksi 4D edit create by:ANDI")
 
 try: from lokasi_list import lokasi_list
 except ImportError: lokasi_list = ["BULLSEYE", "HONGKONG", "SYDNEY", "SINGAPORE"]
