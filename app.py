@@ -22,28 +22,8 @@ from datetime import datetime
 # ==============================================================================
 # BAGIAN 1: DEFINISI SEMUA FUNGSI-FUNGSI INTI
 # ==============================================================================
-DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
-@st.cache_data(ttl=600)
-def fetch_live_results(pasaran_list):
-    results = []
-    headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
-    for pasaran in pasaran_list:
-        try:
-            pasaran_id = pasaran.lower().replace(' ', '')
-            url = f"https://wysiwygscan.com/api?pasaran={pasaran_id}&hari=harian&putaran=1&format=json&urut=desc"
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            if data.get("data") and data["data"]:
-                latest_result = data["data"][0]
-                tanggal = datetime.strptime(latest_result['tanggal'], '%Y-%m-%d').strftime('%d-%m-%Y')
-                results.append({"Pasaran": pasaran.title(), "Tanggal": tanggal, "Hasil": latest_result["result"]})
-            else:
-                results.append({"Pasaran": pasaran.title(), "Tanggal": "-", "Hasil": "..."})
-        except Exception:
-            results.append({"Pasaran": pasaran.title(), "Tanggal": "Error", "Hasil": "Gagal"})
-    return results
+DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
 def _ensure_unique_top_n(top_list, n=6):
     unique_list = list(dict.fromkeys(top_list))[:n]
@@ -177,6 +157,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
 # ==============================================================================
 # BAGIAN 2: APLIKASI STREAMLIT UTAMA
 # ==============================================================================
+
 st.set_page_config(page_title="Prediksi AI", layout="wide")
 st.title("Prediksi 4D - AI")
 
@@ -190,24 +171,104 @@ if "angka_list" not in st.session_state: st.session_state.angka_list = []
 
 with st.sidebar:
     st.header("⚙️ Pengaturan")
-    # ... (Semua widget sidebar tidak berubah)
-    
+    selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
+    selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
+    putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
+    st.markdown("---")
+    st.markdown("### 🎯 Opsi Prediksi")
+    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 7)
+    metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
+    use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
+    model_type = "transformer" if use_transformer else "lstm"
+    st.markdown("---")
+    st.markdown("### 🪟 Window Size per Digit")
+    window_per_digit = {}
+    for label in DIGIT_LABELS:
+        window_per_digit[label] = st.slider(f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}")
+
+col1, col2 = st.columns([1, 4])
+with col1:
+    if st.button("🔄 Ambil Data dari API", use_container_width=True):
+        try:
+            with st.spinner("🔄 Mengambil data..."):
+                url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
+                headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("data"):
+                    angka_api = [d["result"] for d in data["data"] if len(str(d.get("result", ""))) == 4 and str(d.get("result", "")).isdigit()]
+                    st.session_state.angka_list = angka_api
+                    st.success(f"{len(angka_api)} angka berhasil diambil.")
+                else:
+                    st.error("API tidak mengembalikan data yang valid.")
+        except Exception as e:
+            st.error(f"Gagal mengambil data dari API: {e}")
+
+with col2: st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
+with st.expander("✏️ Edit Data Angka Manual", expanded=True):
+    riwayat_input = "\n".join(st.session_state.get("angka_list", []))
+    riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250)
+    if riwayat_text != riwayat_input:
+        st.session_state.angka_list = [x.strip() for x in riwayat_text.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
+        st.rerun()
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
+
 tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
 
 with tab_prediksi:
     if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
-        # ... (Logika prediksi tidak berubah)
-        pass
+        max_ws = max(window_per_digit.values())
+        if len(df) < max_ws + 1:
+            st.warning(f"❌ Data tidak cukup. Butuh minimal {max_ws + 1} baris.")
+        else:
+            result, _ = None, None
+            with st.spinner("⏳ Memproses prediksi..."):
+                if metode == "Markov": result, _ = top6_markov(df, top_n=jumlah_digit)
+            if result:
+                st.subheader(f"🎯 Hasil Prediksi Top {jumlah_digit}")
+                for i, label in enumerate(DIGIT_LABELS):
+                    st.markdown(f"**{label.upper()}:** {', '.join(map(str, result[i]))}")
+                
+                st.divider()
+                st.subheader("🎲 Acak 4D dari Hasil Prediksi (Sistem Rotasi)")
+                if all(result) and len(result) == 4:
+                    ribuan, ratusan, puluhan, satuan = result[0], result[1], result[2], result[3]
+                    patterns = [(ribuan,ratusan,puluhan,satuan), (ratusan,puluhan,satuan,ribuan), (puluhan,satuan,ribuan,ratusan), (satuan,ribuan,ratusan,puluhan)]
+                    acak_4d_list = []
+                    for _ in range(2000): # Jumlah 2000 baris
+                        chosen_pattern = random.choice(patterns)
+                        d1, d2, d3, d4 = random.choice(chosen_pattern[0]), random.choice(chosen_pattern[1]), random.choice(chosen_pattern[2]), random.choice(chosen_pattern[3])
+                        acak_4d_list.append(f"{d1}{d2}{d3}{d4}")
+                    output_string = " * ".join(acak_4d_list)
+                    st.text_area(f"2000 Kombinasi Acak (Pola Rotasi)", output_string, height=300)
 
 with tab_manajemen:
     st.subheader("Manajemen Model AI")
-    # ... (Logika manajemen tidak berubah)
-    pass
+    st.info("Latih atau hapus model AI di sini.")
+    lokasi_id = selected_lokasi.lower().strip().replace(" ", "_")
+    cols = st.columns(4)
+    for i, label in enumerate(DIGIT_LABELS):
+        with cols[i]:
+            model_path = f"saved_models/{lokasi_id}_{label}_{model_type}.h5"
+            st.markdown(f"##### {label.upper()}")
+            if os.path.exists(model_path):
+                st.success("✅ Tersedia")
+                if st.button("Hapus", key=f"hapus_{label}", use_container_width=True): os.remove(model_path); st.rerun()
+            else:
+                st.warning("⚠️ Belum ada")
+    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+        max_ws = max(window_per_digit.values())
+        if len(df) < max_ws + 10:
+            st.error(f"Data tidak cukup untuk melatih. Butuh minimal {max_ws + 10} baris.")
+        else:
+            with st.spinner("🔄 Melatih semua model..."):
+                train_and_save_model(df, selected_lokasi, window_per_digit, model_type)
+            st.success("✅ Semua model berhasil dilatih!"); st.rerun()
 
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    st.info("Klik tombol scan untuk setiap digit. Hasil akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 3, 20, 3)
     max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 30, 12)
@@ -217,7 +278,7 @@ with tab_scan:
         if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
             st.session_state.scan_outputs[label] = "PENDING"
             st.rerun()
-
+            
     if st.button("❌ Hapus Hasil Scan"):
         st.session_state.scan_outputs = {}
         st.rerun()
