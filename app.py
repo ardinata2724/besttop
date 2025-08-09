@@ -144,6 +144,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
 # ==============================================================================
 st.set_page_config(page_title="Prediksi AI", layout="wide")
 st.title("Prediksi 4D")
+st.title("by: ANDI")
 
 try: from lokasi_list import lokasi_list
 except ImportError: lokasi_list = ["BULLSEYE", "HONGKONG", "SYDNEY", "SINGAPORE"]
