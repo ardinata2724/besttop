@@ -4,31 +4,176 @@ import requests
 import os
 import time
 import random
-
-from markov_model import top6_markov, top6_markov_order2, top6_markov_hybrid
-from ai_model import (
-    top6_model,
-    train_and_save_model,
-    kombinasi_4d,
-    find_best_window_size_with_model_true,
-    build_lstm_model,
-    build_transformer_model,
-    top6_ensemble
+import numpy as np
+import tensorflow as tf
+from collections import defaultdict, Counter
+from itertools import product
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import (
+    Input, Embedding, Bidirectional, LSTM, Dropout, Dense,
+    LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
 )
-from lokasi_list import lokasi_list
+from tensorflow.keras.callbacks import CSVLogger, EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.metrics import TopKCategoricalAccuracy
 
-st.set_page_config(page_title="Prediksi AI", layout="wide")
-st.title("Prediksi 4D - AI")
 
-# Inisialisasi state untuk menyimpan hasil scan yang persisten
-if 'scan_outputs' not in st.session_state:
-    st.session_state.scan_outputs = {}
+# ==============================================================================
+# BAGIAN 1: SEMUA FUNGSI DARI ai_model.py DAN markov_model.py
+# ==============================================================================
+
+# --- Fungsi dari Markov Model ---
+
+def _ensure_unique_top_n(top_list, n=6):
+    """Memastikan daftar berisi N digit unik."""
+    unique_list = list(dict.fromkeys(top_list))[:n]
+    if len(unique_list) >= n:
+        return unique_list
+    all_digits = list(range(10))
+    random.shuffle(all_digits)
+    unique_set = set(unique_list)
+    for digit in all_digits:
+        if len(unique_set) >= n: break
+        if digit not in unique_set:
+            unique_set.add(digit)
+    return list(unique_set)
+
+def build_transition_matrix(data):
+    matrix = [defaultdict(lambda: defaultdict(int)) for _ in range(3)]
+    for number in data:
+        digits = f"{int(number):04d}"
+        for i in range(3):
+            matrix[i][digits[i]][digits[i+1]] += 1
+    return matrix
+
+def top6_markov(df, top_n=6):
+    data = df["angka"].astype(str).tolist()
+    matrix = build_transition_matrix(data)
+    freq_ribuan = Counter([int(x[0]) for x in data])
+    hasil = []
+    top_pos1 = [k for k, _ in freq_ribuan.most_common(top_n)]
+    hasil.append(_ensure_unique_top_n(top_pos1, n=top_n))
+    for i in range(3):
+        kandidat = []
+        for prev in matrix[i]:
+            kandidat.extend(matrix[i][prev].keys())
+        kandidat_sorted = Counter(kandidat).most_common()
+        top = [int(k) for k, _ in kandidat_sorted]
+        hasil.append(_ensure_unique_top_n(top, n=top_n))
+    return hasil, None
+
+# --- Fungsi dari AI Model ---
 
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
-for label in DIGIT_LABELS:
-    if f"win_{label}" not in st.session_state:
-        st.session_state[f"win_{label}"] = 7
+class PositionalEncoding(tf.keras.layers.Layer):
+    def call(self, x):
+        seq_len, d_model = tf.shape(x)[1], tf.shape(x)[2]
+        pos = tf.cast(tf.range(seq_len)[:, tf.newaxis], dtype=tf.float32)
+        i = tf.cast(tf.range(d_model)[tf.newaxis, :], dtype=tf.float32)
+        angle_rates = 1 / tf.pow(10000.0, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
+        angle_rads = pos * angle_rates
+        sines, cosines = tf.math.sin(angle_rads[:, 0::2]), tf.math.cos(angle_rads[:, 1::2])
+        pos_encoding = tf.concat([sines, cosines], axis=-1)
+        return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
+
+def preprocess_data(df, window_size=7):
+    if len(df) < window_size + 1: return np.array([]), {}
+    angka = df["angka"].values
+    sequences, targets = [], {label: [] for label in DIGIT_LABELS}
+    for i in range(len(angka) - window_size):
+        window = angka[i:i+window_size+1]
+        if any(len(str(x)) != 4 or not str(x).isdigit() for x in window): continue
+        sequences.append([int(d) for num in window[:-1] for d in f"{int(num):04d}"])
+        target_digits = [int(d) for d in f"{int(window[-1]):04d}"]
+        for j, label in enumerate(DIGIT_LABELS):
+            targets[label].append(to_categorical(target_digits[j], num_classes=10))
+    return np.array(sequences), {label: np.array(targets[label]) for label in DIGIT_LABELS}
+
+def build_lstm_model(input_len):
+    inputs = Input(shape=(input_len,))
+    x = Embedding(input_dim=10, output_dim=32)(inputs)
+    x = PositionalEncoding()(x)
+    x = Bidirectional(LSTM(128, return_sequences=True))(x)
+    x = Dropout(0.3)(x)
+    x = GlobalAveragePooling1D()(x)
+    x = Dense(128, activation='relu')(x)
+    outputs = Dense(10, activation='softmax')(x)
+    model = Model(inputs, outputs)
+    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+def build_transformer_model(input_len):
+    inputs = Input(shape=(input_len,))
+    x = Embedding(input_dim=10, output_dim=32)(inputs)
+    x = PositionalEncoding()(x)
+    attn = MultiHeadAttention(num_heads=4, key_dim=32)(x, x)
+    x = LayerNormalization()(x + attn)
+    ff = Dense(32, activation='relu')(x)
+    x = LayerNormalization()(x + ff)
+    x = GlobalAveragePooling1D()(x)
+    outputs = Dense(10, activation='softmax')(x)
+    model = Model(inputs, outputs)
+    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+    return model
+
+def train_and_save_model(df, lokasi, window_dict, model_type="lstm"):
+    os.makedirs("saved_models", exist_ok=True)
+    for label in DIGIT_LABELS:
+        ws = window_dict.get(label, 7)
+        X, y_dict = preprocess_data(df, window_size=ws)
+        if label not in y_dict or y_dict[label].shape[0] < 10: continue
+        y = y_dict[label]
+        model_path = f"saved_models/{lokasi.lower().replace(' ', '_')}_{label}_{model_type}.h5"
+        model = build_transformer_model(X.shape[1]) if model_type == "transformer" else build_lstm_model(X.shape[1])
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        callbacks = [EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)]
+        model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_val, y_val), callbacks=callbacks, verbose=0)
+        model.save(model_path)
+
+def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
+    results = []
+    loc_id = lokasi.lower().replace(" ", "_")
+    for label in DIGIT_LABELS:
+        ws = window_dict.get(label, 7)
+        X, _ = preprocess_data(df, window_size=ws)
+        if X.shape[0] == 0: return None
+        model_path = f"saved_models/{loc_id}_{label}_{model_type}.h5"
+        if not os.path.exists(model_path): return None
+        try:
+            model = load_model(model_path, custom_objects={"PositionalEncoding": PositionalEncoding})
+            pred = model.predict(X, verbose=0)
+            avg = np.mean(pred, axis=0)
+            top_indices = avg.argsort()[-top_n:][::-1]
+            results.append(list(top_indices))
+        except Exception as e:
+            st.error(f"Error loading model for {label}: {e}")
+            return None
+    return results
+
+def top_n_ensemble(df, lokasi, window_dict, model_type, top_n=6):
+    lstm_result = top_n_model(df, lokasi, window_dict, model_type, top_n)
+    markov_result, _ = top6_markov(df, top_n)
+    if lstm_result is None or markov_result is None: return None
+    ensemble = []
+    for i in range(4):
+        # Sederhana: gabungkan dan ambil yang unik, lalu potong
+        combined = list(dict.fromkeys(lstm_result[i] + markov_result[i]))
+        ensemble.append(combined[:top_n])
+    return ensemble
+
+
+# ==============================================================================
+# BAGIAN 2: APLIKASI STREAMLIT UTAMA
+# ==============================================================================
+
+# Inisialisasi daftar lokasi (jika Anda punya file ini, biarkan. Jika tidak, ini penggantinya)
+try:
+    from lokasi_list import lokasi_list
+except ImportError:
+    lokasi_list = ["HONGKONG", "BULLSEYE", "SYDNEY", "SINGAPORE", "MAGNUM4D"]
+
 
 with st.sidebar:
     st.header("⚙️ Pengaturan")
@@ -39,112 +184,83 @@ with st.sidebar:
     st.markdown("### 🎯 Opsi Prediksi")
     jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 6)
     
-    metode = st.selectbox("🧠 Metode", ["Markov", "Markov Order-2", "Markov Gabungan", "LSTM AI", "Ensemble AI + Markov"])
-    use_transformer = st.checkbox("🤖 Gunakan Transformer")
+    metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI", "Ensemble AI + Markov"])
+    use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
     model_type = "transformer" if use_transformer else "lstm"
-
-    st.markdown("### ⚙️ Parameter Lanjutan")
-    temperature = st.slider("🌡️ Temperature", 0.1, 2.0, 0.5, step=0.1)
-    mode_prediksi = st.selectbox("🎯 Mode Prediksi AI", ["confidence", "ranked", "hybrid"])
-    
-    with st.expander("Kombinasi 4D"):
-        voting_mode = st.selectbox("⚖️ Metode Kombinasi", ["product", "average"])
-        power = st.slider("📈 Confidence Power", 0.5, 3.0, 1.5, 0.1)
-        min_conf_kombinasi = st.slider("🔎 Min Confidence Kombinasi", 0.0001, 0.01, 0.0005, 0.0001, format="%.4f")
 
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
         window_per_digit[label] = st.slider(
-            f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}"
+            f"{label.upper()}", 3, 30, st.session_state.get(f"win_{label}", 7), key=f"win_{label}"
         )
 
-# ... Kode untuk Ambil Data & Edit Manual tidak berubah ...
 if "angka_list" not in st.session_state:
     st.session_state.angka_list = []
+
+# ... (UI untuk Ambil Data & Edit Manual) ...
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
-        st.session_state.angka_list = [] # Reset data
-        # ... sisa logika ambil data
+        # Logika ambil data Anda...
+        pass
 with col2:
-    st.caption("📌 Data angka akan digunakan untuk pelatihan dan prediksi.")
+    st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
 with st.expander("✏️ Edit Data Angka Manual", expanded=True):
-    # ... sisa logika edit manual
-    pass
-df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
-
+    riwayat_input = "\n".join(st.session_state.get("angka_list", []))
+    riwayat_input = st.text_area("📝 1 angka per baris:", value=riwayat_input, height=300)
+    st.session_state.angka_list = [x.strip() for x in riwayat_input.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
+    df = pd.DataFrame({"angka": st.session_state.angka_list})
 
 # ======== Tabs Utama ========
-tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
+tab_prediksi, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "⚙️ Manajemen Model & Scan WS"])
 
 with tab_prediksi:
-    # ... Kode tab prediksi tidak berubah ...
-    pass
+    if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
+        max_ws_needed = max(list(window_per_digit.values()))
+        if len(df) < max_ws_needed + 1:
+            st.warning(f"❌ Data tidak cukup. Butuh minimal {max_ws_needed + 1} baris data.")
+        else:
+            with st.spinner("⏳ Memproses prediksi..."):
+                result = None
+                if metode == "Markov":
+                    result, _ = top6_markov(df, top_n=jumlah_digit)
+                elif metode == "LSTM AI":
+                    result = top_n_model(df, selected_lokasi, window_per_digit, model_type, jumlah_digit)
+                    if result is None: st.error("Gagal memuat model AI. Pastikan model sudah dilatih.")
+                elif metode == "Ensemble AI + Markov":
+                    result = top_n_ensemble(df, selected_lokasi, window_per_digit, model_type, jumlah_digit)
+                    if result is None: st.error("Gagal prediksi ensemble. Pastikan model AI sudah dilatih.")
+            
+            if result:
+                st.subheader(f"🎯 Hasil Prediksi Top {jumlah_digit}")
+                for i, label in enumerate(["Ribuan", "Ratusan", "Puluhan", "Satuan"]):
+                    st.markdown(f"**{label}:** {', '.join(map(str, result[i]))}")
 
 with tab_manajemen:
-    # ... Kode tab manajemen tidak berubah ...
-    pass
-
-with tab_scan:
-    st.subheader("Pencarian Window Size Optimal")
-    st.info("Jalankan scan untuk setiap digit. Hasil scan akan tersimpan dan ditampilkan di bawah secara berurutan.")
-
-    scan_cols = st.columns(4)
-    with scan_cols[0]:
-        min_ws = st.number_input("Min WS", 3, 10, 5, key="scan_min_ws")
-    with scan_cols[1]:
-        max_ws = st.number_input("Max WS", min_ws + 1, 30, 15, key="scan_max_ws")
-    with scan_cols[2]:
-        min_acc = st.slider("Min Akurasi", 0.0, 1.0, 0.05, key="scan_min_acc")
-    with scan_cols[3]:
-        min_conf = st.slider("Min Confidence", 0.0, 1.0, 0.05, key="scan_min_conf")
+    st.subheader("Manajemen Model AI")
+    lokasi_id = selected_lokasi.lower().strip().replace(" ", "_")
+    cols = st.columns(4)
+    for i, label in enumerate(DIGIT_LABELS):
+        with cols[i]:
+            model_path = f"saved_models/{lokasi_id}_{label}_{model_type}.h5"
+            st.markdown(f"##### {label.upper()}")
+            if os.path.exists(model_path):
+                st.success("✅ Tersedia")
+                if st.button("Hapus", key=f"hapus_{label}", use_container_width=True):
+                    os.remove(model_path); st.rerun()
+            else:
+                st.warning("⚠️ Belum ada")
+    st.markdown("---")
+    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+        max_ws_needed = max(list(window_per_digit.values()))
+        if len(df) < max_ws_needed + 5:
+            st.error(f"Data tidak cukup. Butuh minimal {max_ws_needed + 5} baris data.")
+        else:
+            with st.spinner("🔄 Melatih semua model..."):
+                train_and_save_model(df, selected_lokasi, window_per_digit, model_type=model_type)
+            st.success("✅ Semua model berhasil dilatih."); st.rerun()
     
     st.divider()
-
-    btn_cols = st.columns(4)
-    for i, label in enumerate(DIGIT_LABELS):
-        if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
-            if len(df) < max_ws + 5:
-                st.error(f"Data tidak cukup. Dibutuhkan setidaknya {max_ws + 5} baris data.")
-            else:
-                with st.spinner(f"Mencari WS terbaik untuk {label.upper()}..."):
-                    best_ws, result_table = find_best_window_size_with_model_true(
-                        df, label, selected_lokasi, model_type=model_type,
-                        min_ws=min_ws, max_ws=max_ws, temperature=temperature,
-                        top_n=jumlah_digit, min_acc=min_acc, min_conf=min_conf
-                    )
-                    # Simpan hasilnya ke session_state
-                    st.session_state.scan_outputs[label] = {
-                        "best_ws": best_ws,
-                        "table": result_table
-                    }
-                    # Update slider di sidebar secara manual jika ada hasil
-                    if best_ws is not None:
-                        st.session_state[f"win_{label}"] = best_ws
-
-    # Tombol untuk mereset/menghapus semua hasil scan
-    if st.button("❌ Hapus Semua Hasil Scan"):
-        st.session_state.scan_outputs = {}
-        st.rerun()
-
-    st.divider()
-
-    # --- BAGIAN BARU: Tampilkan semua hasil yang tersimpan ---
-    if not st.session_state.scan_outputs:
-        st.info("Belum ada hasil scan. Silakan klik tombol scan di atas.")
-    else:
-        st.subheader("📜 Riwayat Hasil Scan")
-        # Urutkan berdasarkan urutan digit
-        sorted_labels = [label for label in DIGIT_LABELS if label in st.session_state.scan_outputs]
-        for label in sorted_labels:
-            output = st.session_state.scan_outputs[label]
-            with st.expander(f"Hasil untuk {label.upper()}", expanded=True):
-                if output["table"] is not None:
-                    st.dataframe(output["table"])
-                    if output["best_ws"] is not None:
-                        st.success(f"✅ {label.upper()} - WS terbaik yang ditemukan: {output['best_ws']}")
-                    else:
-                        st.error(f"❌ {label.upper()} - Tidak ada Window Size yang memenuhi kriteria.")
-                else:
-                    st.error(f"❌ {label.upper()} - Tidak ada Window Size yang memenuhi kriteria.")
+    st.subheader("Pencarian Window Size (WS) Optimal")
+    st.info("Fitur ini akan diaktifkan kembali setelah kode utama stabil.")
