@@ -83,7 +83,7 @@ def build_model(input_len, model_type="lstm"):
     if model_type == "transformer":
         attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x)
         x = LayerNormalization()(x + attn)
-    else:
+    else: # LSTM
         x = Bidirectional(LSTM(128, return_sequences=True))(x)
         x = Dropout(0.3)(x)
     x = GlobalAveragePooling1D()(x)
@@ -138,34 +138,57 @@ def top_n_ensemble(df, lokasi, window_dict, model_type, top_n=6):
         ensemble.append(combined[:top_n])
     return ensemble, None
 
+# --- FUNGSI SCAN WINDOW SIZE DIPERBARUI UNTUK OUTPUT LENGKAP ---
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
     best_ws, best_score = None, -1
     table_data = []
-    progress_bar = st.progress(0.0)
+    progress_bar = st.progress(0.0, text=f"Memulai scan untuk {label.upper()}...")
     total_steps = max_ws - min_ws + 1
 
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
+        progress_bar.progress((i + 1) / total_steps, text=f"Mencoba WS={ws} untuk {label.upper()}...")
         try:
             X, y_dict = preprocess_data(df, window_size=ws)
             if label not in y_dict or y_dict[label].shape[0] < 10: continue
+            
             y = y_dict[label]
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+            
             model = build_model(X.shape[1], model_type)
             model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy", TopKCategoricalAccuracy(k=top_n)])
             model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
+            
             _, acc, top_n_acc = model.evaluate(X_val, y_val, verbose=0)
-            score = (acc * 0.4) + (top_n_acc * 0.6)
-            table_data.append((ws, f"{acc:.2%}", f"{top_n_acc:.2%}", f"{score:.2f}"))
+            
+            # Hitung confidence dan ambil contoh Top-N
+            preds = model.predict(X_val, verbose=0)
+            avg_conf = np.mean(np.sort(preds, axis=1)[:, -top_n:]) * 100
+            
+            last_pred = model.predict(X[-1:], verbose=0)[0]
+            top_n_digits_pred = ", ".join(map(str, np.argsort(last_pred)[::-1][:top_n]))
+            
+            # Skor internal untuk menentukan yang terbaik
+            score = (acc * 0.2) + (top_n_acc * 0.5) + (avg_conf/100 * 0.3)
+            
+            table_data.append((ws, f"{acc*100:.2f}", f"{top_n_acc*100:.2f}", f"{avg_conf:.2f}", top_n_digits_pred))
+
             if score > best_score:
                 best_score, best_ws = score, ws
-        except Exception: continue
-        progress_bar.progress((i + 1) / total_steps)
+        except Exception:
+            continue
     
     progress_bar.empty()
-    return best_ws, pd.DataFrame(table_data, columns=["Window Size", "Akurasi Top-1", f"Akurasi Top-{top_n}", "Skor"])
+    
+    if not table_data:
+        st.error("Tidak ada data yang cukup untuk di-scan pada rentang WS ini.")
+        return None, None
+        
+    df_table = pd.DataFrame(table_data, columns=["Window Size", "Acc (%)", f"Top-{top_n} Acc (%)", "Conf (%)", f"Top-{top_n}"])
+    return best_ws, df_table
+
 
 # ==============================================================================
-# BAGIAN 3: APLIKASI STREAMLIT UTAMA
+# BAGIAN 2: APLIKASI STREAMLIT UTAMA
 # ==============================================================================
 
 st.set_page_config(page_title="Prediksi AI", layout="wide")
@@ -174,14 +197,13 @@ st.title("Prediksi 4D - AI")
 try: from lokasi_list import lokasi_list
 except ImportError: lokasi_list = ["HONGKONG", "BULLSEYE", "SYDNEY", "SINGAPORE"]
 
-# Inisialisasi state
 if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
 for label in DIGIT_LABELS:
     if f"win_{label}" not in st.session_state: st.session_state[f"win_{label}"] = 7
 if "angka_list" not in st.session_state: st.session_state.angka_list = []
 
-# --- UI Sidebar ---
 with st.sidebar:
+    # ... (Kode sidebar tidak berubah) ...
     st.header("⚙️ Pengaturan")
     selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
     selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
@@ -198,11 +220,10 @@ with st.sidebar:
     for label in DIGIT_LABELS:
         window_per_digit[label] = st.slider(f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}")
 
-# --- UI Data Loader ---
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
-        # ... logika ambil data
+        # ... (Logika ambil data Anda) ...
         pass
 with col2:
     st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
@@ -219,30 +240,17 @@ tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 
 
 with tab_prediksi:
     if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
-        max_ws_needed = max(list(window_per_digit.values()))
-        if len(df) < max_ws_needed + 1:
-            st.warning(f"❌ Data tidak cukup. Butuh minimal {max_ws_needed + 1} baris data.")
-        else:
-            result, probs = None, None
-            with st.spinner("⏳ Memproses prediksi..."):
-                if metode == "Markov": result, _ = top6_markov(df, top_n=jumlah_digit)
-                elif metode == "LSTM AI": result, probs = top_n_model(df, selected_lokasi, window_per_digit, model_type, jumlah_digit)
-                elif metode == "Ensemble AI + Markov": result, _ = top_n_ensemble(df, selected_lokasi, window_per_digit, model_type, jumlah_digit)
-            
-            if result is None:
-                st.error("Gagal melakukan prediksi. Pastikan model AI sudah dilatih jika menggunakan metode AI.")
-            else:
-                st.subheader(f"🎯 Hasil Prediksi Top {jumlah_digit}")
-                for i, label in enumerate(DIGIT_LABELS):
-                    st.markdown(f"**{label.upper()}:** {', '.join(map(str, result[i]))}")
+        # ... (Logika prediksi Anda) ...
+        pass
 
 with tab_manajemen:
     st.subheader("Manajemen Model AI")
-    # ... (Isi sama seperti sebelumnya) ...
+    # ... (Logika manajemen Anda) ...
+    pass
 
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul di bawah dan akan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada di bawah. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 3, 20, 3)
     max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 30, 12)
@@ -250,9 +258,13 @@ with tab_scan:
     btn_cols = st.columns(4)
     for i, label in enumerate(DIGIT_LABELS):
         if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
-            st.session_state.scan_outputs[label] = "PENDING" # Tandai untuk diproses
-            st.rerun()
-            
+            if len(df) < max_ws + 5:
+                st.error(f"Data tidak cukup. Butuh minimal {max_ws + 5} baris data.")
+            else:
+                # Tandai untuk diproses
+                st.session_state.scan_outputs[label] = "PENDING" 
+                st.rerun()
+
     if st.button("❌ Hapus Hasil Scan"):
         st.session_state.scan_outputs = {}
         st.rerun()
@@ -262,13 +274,17 @@ with tab_scan:
     for label, data in st.session_state.scan_outputs.items():
         with st.expander(f"Hasil Scan untuk {label.upper()}", expanded=True):
             if data == "PENDING":
-                with st.spinner(f"Mencari WS untuk {label.upper()}..."):
-                    best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit)
-                    st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
-                    st.rerun() # Refresh untuk menampilkan hasil
+                best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit)
+                # Simpan hasil permanen
+                st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
+                st.rerun() # Refresh untuk menampilkan hasil
+            
             elif isinstance(data, dict):
-                st.dataframe(data["table"])
-                if data["ws"] is not None:
-                    st.success(f"✅ WS terbaik: {data['ws']}")
+                if data.get("table") is not None and not data["table"].empty:
+                    st.dataframe(data["table"])
+                    if data["ws"] is not None:
+                        st.success(f"✅ WS terbaik yang disarankan: {data['ws']}")
+                    else:
+                        st.warning("Tidak ada WS yang menonjol berdasarkan skor.")
                 else:
-                    st.warning("Tidak ditemukan WS yang cocok.")
+                    st.warning("Tidak ada hasil yang ditemukan untuk kriteria ini.")
