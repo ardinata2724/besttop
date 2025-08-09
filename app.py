@@ -241,7 +241,7 @@ with tab_prediksi:
                         d1, d2, d3, d4 = random.choice(chosen_pattern[0]), random.choice(chosen_pattern[1]), random.choice(chosen_pattern[2]), random.choice(chosen_pattern[3])
                         acak_4d_list.append(f"{d1}{d2}{d3}{d4}")
                     output_string = " * ".join(acak_4d_list)
-                    st.text_area(f"2000 Kombinasi Acak (Pola Rotasi)", output_string, height=300)
+                    st.text_area(f"3000 Kombinasi Acak (Pola Rotasi)", output_string, height=300)
 
 with tab_manajemen:
     st.subheader("Manajemen Model AI")
