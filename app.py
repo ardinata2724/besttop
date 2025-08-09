@@ -14,12 +14,9 @@ from tensorflow.keras.layers import (
     Input, Embedding, Bidirectional, LSTM, Dropout, Dense,
     LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
 )
-from tensorflow.keras.callbacks import CSVLogger, EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.metrics import TopKCategoricalAccuracy
-import matplotlib.pyplot as plt
-import seaborn as sns
-
 
 # ==============================================================================
 # BAGIAN 1: DEFINISI FUNGSI-FUNGSI INTI
@@ -96,7 +93,7 @@ def build_model(input_len, model_type="lstm"):
     if model_type == "transformer":
         attn = MultiHeadAttention(num_heads=4, key_dim=64)(x, x)
         x = LayerNormalization()(x + attn)
-    else: # LSTM
+    else:
         x = Bidirectional(LSTM(128, return_sequences=True))(x)
         x = Dropout(0.3)(x)
     x = GlobalAveragePooling1D()(x)
@@ -151,8 +148,7 @@ def top_n_ensemble(df, lokasi, window_dict, model_type, top_n=6):
         ensemble.append(combined[:top_n])
     return ensemble
 
-# --- Fungsi Scan WS yang sudah diperbaiki ---
-def find_best_window_size_with_model_true(container, df, label, lokasi, model_type, min_ws, max_ws, top_n):
+def find_best_window_size(container, df, label, lokasi, model_type, min_ws, max_ws, top_n):
     best_ws, best_score = None, -1
     table_data = []
     for ws in range(min_ws, max_ws + 1):
@@ -185,51 +181,124 @@ def find_best_window_size_with_model_true(container, df, label, lokasi, model_ty
             st.warning(f"Tidak ditemukan WS yang memenuhi kriteria untuk {label.upper()}.")
     return best_ws
 
-
 # ==============================================================================
-# BAGIAN 3: APLIKASI STREAMLIT UTAMA
+# BAGIAN 2: APLIKASI STREAMLIT UTAMA
 # ==============================================================================
 try:
     from lokasi_list import lokasi_list
 except ImportError:
     lokasi_list = ["HONGKONG", "BULLSEYE", "SYDNEY", "SINGAPORE"]
 
-# --- UI Sidebar ---
-# ... (kode sidebar sama seperti sebelumnya) ...
+with st.sidebar:
+    st.header("⚙️ Pengaturan")
+    selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
+    selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
+    putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
+    
+    st.markdown("### 🎯 Opsi Prediksi")
+    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 6)
+    
+    metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI", "Ensemble AI + Markov"])
+    use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
+    model_type = "transformer" if use_transformer else "lstm"
 
-# --- UI Data Loader ---
-# ... (kode data loader sama seperti sebelumnya) ...
+    st.markdown("### 🪟 Window Size per Digit")
+    window_per_digit = {}
+    for label in DIGIT_LABELS:
+        window_per_digit[label] = st.slider(
+            f"{label.upper()}", 3, 30, st.session_state.get(f"win_{label}", 7), key=f"win_{label}"
+        )
 
-# --- Tabs ---
+if "angka_list" not in st.session_state: st.session_state.angka_list = []
+
+col1, col2 = st.columns([1, 4])
+with col1:
+    if st.button("🔄 Ambil Data dari API", use_container_width=True):
+        # ... logika ambil data
+        pass
+with col2:
+    st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
+with st.expander("✏️ Edit Data Angka Manual", expanded=True):
+    riwayat_input = "\n".join(st.session_state.get("angka_list", []))
+    riwayat_input = st.text_area("📝 1 angka per baris:", value=riwayat_input, height=300)
+    st.session_state.angka_list = [x.strip() for x in riwayat_input.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
+    df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
+
+# ======== Tabs Utama ========
 tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
 
 with tab_prediksi:
-    # ... (kode tab prediksi sama seperti sebelumnya) ...
-    pass
+    if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
+        max_ws_needed = max(list(window_per_digit.values()))
+        if len(df) < max_ws_needed + 1:
+            st.warning(f"❌ Data tidak cukup. Butuh minimal {max_ws_needed + 1} baris data.")
+        else:
+            with st.spinner("⏳ Memproses prediksi..."):
+                result, _ = None, None
+                if metode == "Markov":
+                    result, _ = top6_markov(df, top_n=jumlah_digit)
+                elif metode == "LSTM AI":
+                    result, _ = top_n_model(df, selected_lokasi, window_per_digit, model_type, jumlah_digit)
+                    if result is None: st.error("Gagal memuat model AI. Pastikan model sudah dilatih.")
+                elif metode == "Ensemble AI + Markov":
+                    result = top_n_ensemble(df, selected_lokasi, window_per_digit, model_type, jumlah_digit)
+                    if result is None: st.error("Gagal prediksi ensemble. Pastikan model AI sudah dilatih.")
+            
+            if result:
+                st.subheader(f"🎯 Hasil Prediksi Top {jumlah_digit}")
+                for i, label in enumerate(["Ribuan", "Ratusan", "Puluhan", "Satuan"]):
+                    st.markdown(f"**{label}:** {', '.join(map(str, result[i]))}")
+
+                st.divider()
+                st.subheader("🎲 Acak 4D dari Hasil Prediksi (Sistem Rotasi)")
+                if all(result) and len(result) == 4:
+                    ribuan, ratusan, puluhan, satuan = result[0], result[1], result[2], result[3]
+                    patterns = [(ribuan,ratusan,puluhan,satuan), (ratusan,puluhan,satuan,ribuan), (puluhan,satuan,ribuan,ratusan), (satuan,ribuan,ratusan,puluhan)]
+                    acak_4d = ["".join(str(random.choice(p[i])) for i in range(4)) for _ in range(1000) for p in [random.choice(patterns)]]
+                    st.text_area("1000 Kombinasi Acak", " * ".join(acak_4d), height=300)
 
 with tab_manajemen:
-    # ... (kode tab manajemen sama seperti sebelumnya) ...
-    pass
+    st.subheader("Manajemen Model & Scan WS")
+    st.info("Latih atau hapus model AI, dan jalankan scan untuk mencari Window Size (WS) terbaik.")
+    
+    st.markdown("---")
+    st.subheader("Aksi Model")
+    lokasi_id = selected_lokasi.lower().strip().replace(" ", "_")
+    cols = st.columns(4)
+    for i, label in enumerate(DIGIT_LABELS):
+        with cols[i]:
+            model_path = f"saved_models/{lokasi_id}_{label}_{model_type}.h5"
+            if os.path.exists(model_path):
+                st.success(f"✅ {label.upper()}")
+                if st.button("Hapus", key=f"hapus_{label}", use_container_width=True):
+                    os.remove(model_path); st.rerun()
+            else:
+                st.warning(f"⚠️ {label.upper()}")
+    
+    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+        max_ws_needed = max(list(window_per_digit.values()))
+        if len(df) < max_ws_needed + 10:
+            st.error(f"Data tidak cukup untuk melatih. Butuh setidaknya {max_ws_needed + 10} baris data.")
+        else:
+            with st.spinner("🔄 Melatih semua model..."):
+                train_and_save_model(df, selected_lokasi, window_per_digit, model_type=model_type)
+            st.success("✅ Semua model berhasil dilatih!"); st.rerun()
 
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul di bawah dan akan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    st.info("Klik tombol scan untuk setiap digit. Hasil akan muncul di bawah dan akan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
 
-    scan_cols = st.columns(4)
+    scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 3, 20, 3)
     max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 30, 12)
     
-    st.divider()
-
-    # Inisialisasi tempat untuk menyimpan output
     if 'scan_output_container' not in st.session_state:
         st.session_state.scan_output_container = {}
 
     btn_cols = st.columns(4)
     for i, label in enumerate(DIGIT_LABELS):
         if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
-            # Saat tombol ditekan, buat expander baru untuk hasilnya
-            st.session_state.scan_output_container[label] = st.empty()
+            st.session_state.scan_output_container[label] = True
 
     if st.button("❌ Hapus Hasil Scan"):
         st.session_state.scan_output_container = {}
@@ -237,14 +306,8 @@ with tab_scan:
     
     st.divider()
 
-    # Selalu tampilkan semua container yang sudah dibuat
-    sorted_labels = [l for l in DIGIT_LABELS if l in st.session_state.scan_output_container]
+    sorted_labels = [l for l in DIGIT_LABELS if st.session_state.scan_output_container.get(l)]
     for label in sorted_labels:
-        with st.session_state.scan_output_container[label].container():
-            with st.spinner(f"Menjalankan atau menampilkan hasil untuk {label.upper()}..."):
-                st.subheader(f"Hasil Scan untuk: {label.upper()}")
-                # Panggil fungsi yang akan mengisi container ini dengan output
-                find_best_window_size_with_model_true(
-                    st, df, label, selected_lokasi, model_type,
-                    min_ws, max_ws, jumlah_digit
-                )
+        container = st.container()
+        with container:
+            find_best_window_size(st, df, label, selected_lokasi, model_type, min_ws, max_ws, jumlah_digit)
