@@ -139,6 +139,58 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
     if not table_data: return None, None
     return best_ws, pd.DataFrame(table_data, columns=["Window Size", "Acc (%)", f"Top-{top_n} Acc (%)", "Conf (%)", f"Top-{top_n}"])
 
+# ===== FUNGSI BARU DITAMBAHKAN DI SINI =====
+def train_and_save_model(df, lokasi, window_dict, model_type):
+    """
+    Fungsi untuk melatih model untuk setiap digit (ribuan, ratusan, dst.)
+    dan menyimpannya ke dalam file.
+    """
+    st.info(f"Memulai proses pelatihan untuk lokasi: {lokasi} (Model: {model_type.upper()})")
+    lokasi_id = lokasi.lower().strip().replace(" ", "_")
+    
+    # Memastikan direktori untuk menyimpan model sudah ada
+    if not os.path.exists("saved_models"):
+        os.makedirs("saved_models")
+        st.toast("Direktori 'saved_models' dibuat.")
+
+    for label in DIGIT_LABELS:
+        ws = window_dict.get(label, 7) # Ambil window size dari dictionary
+        
+        progress_text = f"Memproses data untuk digit {label.upper()} dengan Window Size = {ws}..."
+        bar = st.progress(0, text=progress_text)
+
+        X, y_dict = preprocess_data(df, window_size=ws)
+        bar.progress(25, text=progress_text)
+
+        if label not in y_dict or y_dict[label].shape[0] < 10:
+            st.warning(f"Data tidak cukup untuk melatih model '{label.upper()}'. Minimal butuh 10 data. Dilewati.")
+            bar.empty()
+            continue
+        
+        y = y_dict[label]
+        # Split data training dan validasi
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        progress_text = f"Melatih model untuk {label.upper()}... Ini mungkin akan memakan waktu."
+        bar.progress(50, text=progress_text)
+
+        # Bangun model
+        model = build_model(X.shape[1], model_type)
+        # Tentukan callback untuk berhenti lebih awal jika tidak ada peningkatan
+        early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+        
+        # Latih model
+        model.fit(X_train, y_train, epochs=30, batch_size=32, validation_data=(X_val, y_val), callbacks=[early_stopping], verbose=0)
+        
+        bar.progress(75, text=f"Menyimpan model untuk {label.upper()}...")
+        
+        # Simpan model yang sudah dilatih
+        model_path = f"saved_models/{lokasi_id}_{label}_{model_type}.h5"
+        model.save(model_path)
+        
+        bar.progress(100, text=f"Model untuk {label.upper()} berhasil dilatih & disimpan!")
+        time.sleep(1) # Jeda sejenak agar pesan terlihat
+        bar.empty()
 # ==============================================================================
 # BAGIAN 2: APLIKASI STREAMLIT UTAMA
 # ==============================================================================
@@ -246,8 +298,7 @@ with tab_manajemen:
         if len(df) < max_ws + 10:
             st.error(f"Data tidak cukup untuk melatih. Butuh setidaknya {max_ws + 10} baris.")
         else:
-            with st.spinner("🔄 Melatih semua model..."):
-                train_and_save_model(df, selected_lokasi, window_per_digit, model_type)
+            train_and_save_model(df, selected_lokasi, window_per_digit, model_type)
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
 
 with tab_scan:
@@ -276,23 +327,16 @@ with tab_scan:
                 st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
                 st.rerun()
             
-            # ===== BLOK KODE YANG DIUBAH DIMULAI DI SINI =====
             elif isinstance(data, dict):
                 result_df = data.get("table")
                 if result_df is not None and not result_df.empty:
-                    # 1. Tetap tampilkan tabel seperti biasa
                     st.dataframe(result_df)
-
-                    # 2. Tambahkan area teks yang bisa disalin untuk kolom Top-N
                     st.markdown("---")
                     st.markdown("👇 **Salin Hasil dari Kolom Top-N**")
                     
-                    # Ambil nama kolom secara dinamis (misal: "Top-7")
                     top_n_column_name = f"Top-{jumlah_digit}"
 
-                    # Pastikan kolomnya ada sebelum diekstrak
                     if top_n_column_name in result_df.columns:
-                        # Gabungkan semua baris dari kolom tersebut menjadi satu teks
                         copyable_text = "\n".join(result_df[top_n_column_name].astype(str))
                         st.text_area(
                             "Klik di dalam kotak di bawah lalu tekan Ctrl+A dan Ctrl+C untuk menyalin semua baris.",
@@ -300,11 +344,9 @@ with tab_scan:
                             height=250
                         )
 
-                    # 3. Tampilkan kembali rekomendasi WS terbaik
                     if data["ws"] is not None:
                         st.success(f"✅ WS terbaik yang disarankan: {data['ws']}")
                     else:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
                     st.warning("Tidak ada hasil yang ditemukan.")
-            # ===== BLOK KODE YANG DIUBAH SELESAI DI SINI =====
