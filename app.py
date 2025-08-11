@@ -51,6 +51,43 @@ def top6_markov(df, top_n=6):
         hasil.append(top)
     return [_ensure_unique_top_n(h, n=top_n) for h in hasil], None
 
+def calculate_angka_main(df):
+    """Menghitung berbagai jenis 'Angka Main' dari data historis."""
+    if df.empty or len(df) < 10:
+        return {
+            "ai_depan": "Data tidak cukup",
+            "ai_tengah": "Data tidak cukup",
+            "ai_belakang": "Data tidak cukup",
+            "jumlah_2d": "Data tidak cukup",
+            "colok_bebas": "Data tidak cukup",
+            "ai_3d": "Data tidak cukup",
+        }
+
+    angka_str = df["angka"].astype(str).str.zfill(4)
+    depan = angka_str.str[:2]
+    ai_depan = ", ".join(depan.value_counts().nlargest(5).index)
+    tengah = angka_str.str[1:3]
+    ai_tengah = ", ".join(tengah.value_counts().nlargest(5).index)
+    belakang = angka_str.str[2:]
+    ai_belakang = ", ".join(belakang.value_counts().nlargest(5).index)
+    puluhan = angka_str.str[2].astype(int)
+    satuan = angka_str.str[3].astype(int)
+    jumlah = (puluhan + satuan) % 10
+    jumlah_2d = ", ".join(map(str, jumlah.value_counts().nlargest(5).index))
+    all_digits = "".join(angka_str.tolist())
+    colok_bebas = ", ".join([item[0] for item in Counter(all_digits).most_common(5)])
+    ai_3d_series = angka_str.str[1:]
+    ai_3d = ", ".join(ai_3d_series.value_counts().nlargest(5).index)
+
+    return {
+        "ai_depan": ai_depan,
+        "ai_tengah": ai_tengah,
+        "ai_belakang": ai_belakang,
+        "jumlah_2d": jumlah_2d,
+        "colok_bebas": colok_bebas,
+        "ai_3d": ai_3d,
+    }
+
 class PositionalEncoding(tf.keras.layers.Layer):
     """Layer untuk menambahkan positional encoding pada model Transformer."""
     def call(self, x):
@@ -217,7 +254,6 @@ with st.sidebar:
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
-        # Mengganti st.slider menjadi st.number_input
         window_per_digit[label] = st.number_input(
             f"{label.upper()}", 
             min_value=1, 
@@ -255,7 +291,13 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
         st.rerun()
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 
-tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
+# --- PERUBAHAN DI SINI: MENAMBAHKAN TAB BARU ---
+tab_prediksi, tab_scan, tab_manajemen, tab_angka_main = st.tabs([
+    "🔮 Prediksi & Hasil", 
+    "🪟 Scan Window Size", 
+    "⚙️ Manajemen Model",
+    "🎯 Angka Main"
+])
 
 # --- TAB PREDIKSI ---
 with tab_prediksi:
@@ -324,8 +366,6 @@ with tab_scan:
     btn_cols = st.columns(4)
     for i, label in enumerate(DIGIT_LABELS):
         if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
-            # --- PERUBAHAN DI SINI ---
-            # Menambahkan notifikasi toast saat tombol scan diklik
             st.toast(f"🔎 Sedang memindai {label.upper()}, mohon tunggu...", icon="⏳")
             st.session_state.scan_outputs[label] = "PENDING"
             st.rerun()
@@ -361,3 +401,28 @@ with tab_scan:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
                     st.warning("Tidak ada hasil yang ditemukan.")
+
+# --- TAB ANGKA MAIN ---
+with tab_angka_main:
+    st.subheader("Analisis Angka Main dari Data Historis")
+    
+    if len(df) < 10:
+        st.warning("Data historis tidak cukup untuk melakukan analisis (minimal 10 baris).")
+    else:
+        with st.spinner("Menganalisis Angka Main..."):
+            am = calculate_angka_main(df)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("##### Analisis 2D")
+                st.markdown(f"**AI Depan:** `{am['ai_depan']}`")
+                st.markdown(f"**AI Tengah:** `{am['ai_tengah']}`")
+                st.markdown(f"**AI Belakang:** `{am['ai_belakang']}`")
+
+            with col2:
+                st.markdown("##### Analisis Lainnya")
+                st.markdown(f"**Jumlah 2D (Belakang):** `{am['jumlah_2d']}`")
+                st.markdown(f"**Colok Bebas:** `{am['colok_bebas']}`")
+                st.markdown(f"**AI 3D (Belakang):** `{am['ai_3d']}`")
+
+    st.info("Angka di atas adalah hasil analisis statistik dari data historis yang tersedia dan bukan merupakan jaminan hasil.")
