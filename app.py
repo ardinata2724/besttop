@@ -51,46 +51,50 @@ def top6_markov(df, top_n=6):
         hasil.append(top)
     return [_ensure_unique_top_n(h, n=top_n) for h in hasil], None
 
-def calculate_angka_main(df, top_n=5):
-    """
-    Menghitung berbagai jenis 'Angka Main' dari data historis.
-    Jumlah hasil ditentukan oleh parameter top_n.
-    """
+def calculate_angka_main_stats(df, top_n=5):
+    """Menghitung statistik sederhana seperti Jumlah 2D dan Colok Bebas."""
     if df.empty or len(df) < 10:
-        return {
-            "ai_depan": "Data tidak cukup",
-            "ai_tengah": "Data tidak cukup",
-            "ai_belakang": "Data tidak cukup",
-            "jumlah_2d": "Data tidak cukup",
-            "colok_bebas": "Data tidak cukup",
-            "ai_3d": "Data tidak cukup",
-        }
+        return {"jumlah_2d": "Data tidak cukup", "colok_bebas": "Data tidak cukup"}
 
     angka_str = df["angka"].astype(str).str.zfill(4)
-    
-    # --- PERUBAHAN LOGIKA ---
-    # Menghitung angka 4D yang paling sering muncul
-    top_4d_numbers = "\n".join(angka_str.value_counts().nlargest(top_n).index)
-    
-    # Jumlah 2D (berdasarkan digit belakang) - logika tetap sama
     puluhan = angka_str.str[2].astype(int)
     satuan = angka_str.str[3].astype(int)
     jumlah = (puluhan + satuan) % 10
     jumlah_2d = ", ".join(map(str, jumlah.value_counts().nlargest(top_n).index))
     
-    # Colok Bebas (digit paling sering muncul) - logika tetap sama
     all_digits = "".join(angka_str.tolist())
     colok_bebas = ", ".join([item[0] for item in Counter(all_digits).most_common(top_n)])
     
-    # Mengembalikan hasil. AI Depan, Tengah, Belakang, dan 3D sekarang menampilkan top 4D.
-    return {
-        "ai_depan": top_4d_numbers,
-        "ai_tengah": top_4d_numbers,
-        "ai_belakang": top_4d_numbers,
-        "jumlah_2d": jumlah_2d,
-        "colok_bebas": colok_bebas,
-        "ai_3d": top_4d_numbers,
-    }
+    return {"jumlah_2d": jumlah_2d, "colok_bebas": colok_bebas}
+
+def calculate_markov_ai_belakang(df, top_n=6):
+    """Menghitung AI Belakang berdasarkan digit Ribuan (Metode Markov)."""
+    if df.empty or len(df) < 10:
+        return "Data tidak cukup untuk analisis."
+
+    angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
+    
+    transitions = defaultdict(list)
+    for num_str in angka_str_list:
+        start_digit = num_str[0]
+        following_digits = list(num_str[1:])
+        transitions[start_digit].extend(following_digits)
+
+    prediction_map = {}
+    for start_digit, following_digits in transitions.items():
+        top_digits_counts = Counter(following_digits).most_common(top_n)
+        top_digits = [digit for digit, count in top_digits_counts]
+        prediction_map[start_digit] = "".join(top_digits)
+
+    output_lines = []
+    # Menampilkan 30 data historis terakhir untuk analisis
+    for num_str in reversed(angka_str_list[-30:]):
+        start_digit = num_str[0]
+        ai_prediction = prediction_map.get(start_digit, "")
+        output_lines.append(f"{num_str} = {ai_prediction} ai")
+    
+    return "\n".join(output_lines)
+
 
 class PositionalEncoding(tf.keras.layers.Layer):
     """Layer untuk menambahkan positional encoding pada model Transformer."""
@@ -250,7 +254,7 @@ with st.sidebar:
     putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
     st.markdown("---")
     st.markdown("### 🎯 Opsi Prediksi")
-    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 4)
+    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 6)
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
     use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
     model_type = "transformer" if use_transformer else "lstm"
@@ -346,7 +350,7 @@ with tab_manajemen:
                     os.remove(model_path); st.rerun()
             else:
                 st.warning("⚠️ Belum ada")
-    if st.button("� Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
         if len(df) < max_ws + 10:
             st.error(f"Data tidak cukup untuk melatih. Butuh setidaknya {max_ws + 10} baris.")
@@ -413,28 +417,29 @@ with tab_angka_main:
     if len(df) < 10:
         st.warning("Data historis tidak cukup untuk melakukan analisis (minimal 10 baris).")
     else:
-        with st.spinner("Menganalisis Angka Main..."):
-            am = calculate_angka_main(df, top_n=jumlah_digit)
+        # --- PERUBAHAN TAMPILAN DAN LOGIKA ---
+        col1, col2 = st.columns([2, 1]) # Memberi lebih banyak ruang untuk hasil markov
+        with col1:
+            st.markdown("##### Analisis AI Belakang (Markov)")
+            with st.spinner("Menganalisis AI Markov..."):
+                markov_result = calculate_markov_ai_belakang(df, top_n=jumlah_digit)
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("##### Analisis Angka")
-                
-                st.markdown("**AI Depan**")
-                st.text_area("ai_depan_area", am['ai_depan'], height=(jumlah_digit * 20) + 10, disabled=True, label_visibility="collapsed")
-                
-                st.markdown("**AI Tengah**")
-                st.text_area("ai_tengah_area", am['ai_tengah'], height=(jumlah_digit * 20) + 10, disabled=True, label_visibility="collapsed")
-                
-                st.markdown("**AI Belakang**")
-                st.text_area("ai_belakang_area", am['ai_belakang'], height=(jumlah_digit * 20) + 10, disabled=True, label_visibility="collapsed")
+            st.text_area(
+                "Hasil Analisis Markov (Dapat Disalin)",
+                markov_result,
+                height=400,
+                label_visibility="collapsed"
+            )
 
-            with col2:
-                st.markdown("##### Analisis Lainnya")
-                st.markdown(f"**Jumlah 2D (Belakang):** `{am['jumlah_2d']}`")
-                st.markdown(f"**Colok Bebas:** `{am['colok_bebas']}`")
-                
-                st.markdown("**AI 3D (Belakang)**")
-                st.text_area("ai_3d_area", am['ai_3d'], height=(jumlah_digit * 20) + 10, disabled=True, label_visibility="collapsed")
+        with col2:
+            st.markdown("##### Statistik Lainnya")
+            with st.spinner("Menghitung statistik..."):
+                stats = calculate_angka_main_stats(df, top_n=jumlah_digit)
+            
+            st.markdown(f"**Jumlah 2D (Belakang):**")
+            st.code(stats['jumlah_2d'])
+            
+            st.markdown(f"**Colok Bebas:**")
+            st.code(stats['colok_bebas'])
 
     st.info("Angka di atas adalah hasil analisis statistik dari data historis yang tersedia dan bukan merupakan jaminan hasil.")
