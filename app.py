@@ -68,13 +68,12 @@ def calculate_angka_main_stats(df, top_n=5):
     return {"jumlah_2d": jumlah_2d, "colok_bebas": colok_bebas}
 
 def calculate_markov_ai_belakang(df, top_n=6):
-    """Menghitung AI Belakang secara retrospektif menggunakan metode Markov."""
+    """Menghitung AI Belakang dan AI Lawan menggunakan metode Markov."""
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
     
-    # Peta transisi dibuat dari seluruh data untuk akurasi
     transitions = defaultdict(list)
     for num_str in angka_str_list:
         start_digit = num_str[0]
@@ -83,19 +82,23 @@ def calculate_markov_ai_belakang(df, top_n=6):
 
     prediction_map = {}
     for start_digit, following_digits in transitions.items():
-        # Mengambil digit unik yang paling sering muncul
         top_digits_counts = Counter(following_digits).most_common()
         unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
         prediction_map[start_digit] = "".join(unique_top_digits)
 
     output_lines = []
     
-    # --- LOGIKA DIKEMBALIKAN KE VERSI SEBELUMNYA ---
     # Menampilkan 30 data historis terakhir secara retrospektif dan kronologis.
     for num_str in angka_str_list[-30:]:
         start_digit = num_str[0]
-        ai_prediction = prediction_map.get(start_digit, "N/A")
-        output_lines.append(f"{num_str} = {ai_prediction} ai")
+        ai_prediction = prediction_map.get(start_digit, "")
+        
+        # --- LOGIKA BARU UNTUK AI LAWAN ---
+        all_possible_digits = set("0123456789")
+        ai_set = set(ai_prediction)
+        ai_lawan = "".join(sorted(list(all_possible_digits - ai_set)))
+        
+        output_lines.append(f"{num_str} = {ai_prediction} ai vs {ai_lawan} ai")
     
     return "\n".join(output_lines)
 
