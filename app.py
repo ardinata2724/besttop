@@ -324,6 +324,9 @@ with tab_scan:
     btn_cols = st.columns(4)
     for i, label in enumerate(DIGIT_LABELS):
         if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
+            # --- PERUBAHAN DI SINI ---
+            # Menambahkan notifikasi toast saat tombol scan diklik
+            st.toast(f"🔎 Sedang memindai {label.upper()}, mohon tunggu...", icon="⏳")
             st.session_state.scan_outputs[label] = "PENDING"
             st.rerun()
 
