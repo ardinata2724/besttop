@@ -25,6 +25,7 @@ from datetime import datetime
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 
 def _ensure_unique_top_n(top_list, n=6):
+    """Memastikan daftar top-N memiliki item unik hingga N."""
     unique_list = list(dict.fromkeys(top_list))[:n]
     if len(unique_list) >= n: return unique_list
     all_digits = list(range(10)); random.shuffle(all_digits)
@@ -35,6 +36,7 @@ def _ensure_unique_top_n(top_list, n=6):
     return list(unique_set)
 
 def top6_markov(df, top_n=6):
+    """Prediksi menggunakan metode Markov Chain sederhana."""
     if df.empty or len(df) < 10: return [], None
     data = df["angka"].astype(str).tolist()
     matrix = [defaultdict(lambda: defaultdict(int)) for _ in range(3)]
@@ -50,6 +52,7 @@ def top6_markov(df, top_n=6):
     return [_ensure_unique_top_n(h, n=top_n) for h in hasil], None
 
 class PositionalEncoding(tf.keras.layers.Layer):
+    """Layer untuk menambahkan positional encoding pada model Transformer."""
     def call(self, x):
         seq_len, d_model = tf.shape(x)[1], tf.shape(x)[2]
         pos = tf.cast(tf.range(seq_len)[:, tf.newaxis], dtype=tf.float32)
@@ -61,6 +64,7 @@ class PositionalEncoding(tf.keras.layers.Layer):
         return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
 
 def preprocess_data(df, window_size=7):
+    """Mempersiapkan data sekuensial untuk model AI."""
     if len(df) < window_size + 1: return np.array([]), {}
     angka = df["angka"].values
     sequences, targets = [], {label: [] for label in DIGIT_LABELS}
@@ -74,6 +78,7 @@ def preprocess_data(df, window_size=7):
     return np.array(sequences), {label: np.array(v) for label, v in targets.items()}
 
 def build_model(input_len, model_type="lstm"):
+    """Membangun arsitektur model AI (LSTM atau Transformer)."""
     inputs = Input(shape=(input_len,))
     x = Embedding(input_dim=10, output_dim=64)(inputs)
     x = PositionalEncoding()(x)
@@ -92,6 +97,7 @@ def build_model(input_len, model_type="lstm"):
     return model
 
 def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
+    """Melakukan prediksi menggunakan model AI yang sudah dilatih."""
     results, probs = [], []
     loc_id = lokasi.lower().replace(" ", "_")
     for label in DIGIT_LABELS:
@@ -112,6 +118,7 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
     return results, probs
 
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
+    """Mencari window size terbaik dengan melatih dan mengevaluasi model."""
     best_ws, best_score = None, -1
     table_data = []
     progress_bar = st.progress(0.0, text=f"Memulai scan untuk {label.upper()}...")
@@ -139,23 +146,17 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
     if not table_data: return None, None
     return best_ws, pd.DataFrame(table_data, columns=["Window Size", "Acc (%)", f"Top-{top_n} Acc (%)", "Conf (%)", f"Top-{top_n}"])
 
-# ===== FUNGSI BARU DITAMBAHKAN DI SINI =====
 def train_and_save_model(df, lokasi, window_dict, model_type):
-    """
-    Fungsi untuk melatih model untuk setiap digit (ribuan, ratusan, dst.)
-    dan menyimpannya ke dalam file.
-    """
+    """Melatih dan menyimpan model untuk setiap posisi digit."""
     st.info(f"Memulai proses pelatihan untuk lokasi: {lokasi} (Model: {model_type.upper()})")
     lokasi_id = lokasi.lower().strip().replace(" ", "_")
     
-    # Memastikan direktori untuk menyimpan model sudah ada
     if not os.path.exists("saved_models"):
         os.makedirs("saved_models")
         st.toast("Direktori 'saved_models' dibuat.")
 
     for label in DIGIT_LABELS:
-        ws = window_dict.get(label, 7) # Ambil window size dari dictionary
-        
+        ws = window_dict.get(label, 7)
         progress_text = f"Memproses data untuk digit {label.upper()} dengan Window Size = {ws}..."
         bar = st.progress(0, text=progress_text)
 
@@ -168,29 +169,23 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
             continue
         
         y = y_dict[label]
-        # Split data training dan validasi
         X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
         
         progress_text = f"Melatih model untuk {label.upper()}... Ini mungkin akan memakan waktu."
         bar.progress(50, text=progress_text)
 
-        # Bangun model
         model = build_model(X.shape[1], model_type)
-        # Tentukan callback untuk berhenti lebih awal jika tidak ada peningkatan
         early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-        
-        # Latih model
         model.fit(X_train, y_train, epochs=30, batch_size=32, validation_data=(X_val, y_val), callbacks=[early_stopping], verbose=0)
         
         bar.progress(75, text=f"Menyimpan model untuk {label.upper()}...")
-        
-        # Simpan model yang sudah dilatih
         model_path = f"saved_models/{lokasi_id}_{label}_{model_type}.h5"
         model.save(model_path)
         
         bar.progress(100, text=f"Model untuk {label.upper()} berhasil dilatih & disimpan!")
-        time.sleep(1) # Jeda sejenak agar pesan terlihat
+        time.sleep(1)
         bar.empty()
+
 # ==============================================================================
 # BAGIAN 2: APLIKASI STREAMLIT UTAMA
 # ==============================================================================
@@ -200,11 +195,13 @@ st.title("Prediksi 4D - AI")
 try: from lokasi_list import lokasi_list
 except ImportError: lokasi_list = ["BULLSEYE", "HONGKONG", "SYDNEY", "SINGAPORE"]
 
+# Inisialisasi session state
 if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
 for label in DIGIT_LABELS:
     if f"win_{label}" not in st.session_state: st.session_state[f"win_{label}"] = 7
 if "angka_list" not in st.session_state: st.session_state.angka_list = []
 
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
@@ -220,8 +217,11 @@ with st.sidebar:
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
-        window_per_digit[label] = st.slider(f"{label.upper()}", 3, 30, st.session_state[f"win_{label}"], key=f"win_{label}")
+        # --- PERUBAHAN DI SINI ---
+        # Mengubah rentang slider dari 3-30 menjadi 1-100
+        window_per_digit[label] = st.slider(f"{label.upper()}", 1, 100, st.session_state[f"win_{label}"], key=f"win_{label}")
 
+# --- KONTEN UTAMA ---
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
@@ -252,6 +252,7 @@ df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 
 tab_prediksi, tab_scan, tab_manajemen = st.tabs(["🔮 Prediksi & Hasil", "🪟 Scan Window Size", "⚙️ Manajemen Model"])
 
+# --- TAB PREDIKSI ---
 with tab_prediksi:
     if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
@@ -278,6 +279,7 @@ with tab_prediksi:
                 output_string = " * ".join(kombinasi_4d_list)
                 st.text_area(f"Total {total_kombinasi} Kombinasi Penuh", output_string, height=300)
 
+# --- TAB MANAJEMEN MODEL ---
 with tab_manajemen:
     st.subheader("Manajemen Model AI")
     st.info("Latih atau hapus model AI di sini. Jika Anda mengubah Window Size, latih ulang model untuk hasil terbaik.")
@@ -301,12 +303,15 @@ with tab_manajemen:
             train_and_save_model(df, selected_lokasi, window_per_digit, model_type)
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
 
+# --- TAB SCAN WINDOW SIZE ---
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
     st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     scan_cols = st.columns(2)
-    min_ws = scan_cols[0].number_input("Min WS", 3, 20, 3)
-    max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 30, 12)
+    # --- PERUBAHAN DI SINI ---
+    # Menyesuaikan rentang input untuk scan agar konsisten dengan slider
+    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 3)
+    max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 100, 25)
     
     if st.button("❌ Hapus Hasil Scan"):
         st.session_state.scan_outputs = {}
