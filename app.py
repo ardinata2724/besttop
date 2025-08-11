@@ -87,8 +87,9 @@ def calculate_markov_ai_belakang(df, top_n=6):
         prediction_map[start_digit] = "".join(top_digits)
 
     output_lines = []
-    # Menampilkan 30 data historis terakhir untuk analisis
-    for num_str in reversed(angka_str_list[-30:]):
+    # --- PERUBAHAN LOGIKA DI SINI ---
+    # Menampilkan 30 data historis terakhir, dalam urutan kronologis (tidak dibalik).
+    for num_str in angka_str_list[-30:]:
         start_digit = num_str[0]
         ai_prediction = prediction_map.get(start_digit, "")
         output_lines.append(f"{num_str} = {ai_prediction} ai")
