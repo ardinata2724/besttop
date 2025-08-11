@@ -68,12 +68,13 @@ def calculate_angka_main_stats(df, top_n=5):
     return {"jumlah_2d": jumlah_2d, "colok_bebas": colok_bebas}
 
 def calculate_markov_ai_belakang(df, top_n=6):
-    """Menghitung AI Belakang berdasarkan digit Ribuan (Metode Markov)."""
-    if df.empty or len(df) < 10:
+    """Menghitung AI Belakang secara prediktif menggunakan metode Markov."""
+    if df.empty or len(df) < 11: # Butuh setidaknya 11 data untuk 1 prediksi
         return "Data tidak cukup untuk analisis."
 
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
     
+    # Peta transisi tetap dibuat dari seluruh data untuk akurasi
     transitions = defaultdict(list)
     for num_str in angka_str_list:
         start_digit = num_str[0]
@@ -82,17 +83,30 @@ def calculate_markov_ai_belakang(df, top_n=6):
 
     prediction_map = {}
     for start_digit, following_digits in transitions.items():
-        top_digits_counts = Counter(following_digits).most_common(top_n)
-        top_digits = [digit for digit, count in top_digits_counts]
-        prediction_map[start_digit] = "".join(top_digits)
+        # Mengambil digit unik yang paling sering muncul
+        top_digits_counts = Counter(following_digits).most_common()
+        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
+        prediction_map[start_digit] = "".join(unique_top_digits)
 
     output_lines = []
-    # --- PERUBAHAN LOGIKA DI SINI ---
-    # Menampilkan 30 data historis terakhir, dalam urutan kronologis (tidak dibalik).
-    for num_str in angka_str_list[-30:]:
-        start_digit = num_str[0]
-        ai_prediction = prediction_map.get(start_digit, "")
-        output_lines.append(f"{num_str} = {ai_prediction} ai")
+    
+    # --- PERUBAHAN LOGIKA UTAMA ---
+    # Kita iterasi hingga elemen KEDUA DARI TERAKHIR untuk membuat prediksi bagi elemen TERAKHIR.
+    # Kita hanya menampilkan 30 baris terakhir dari hasil prediksi ini.
+    
+    start_index = max(0, len(angka_str_list) - 31) # Mulai dari 31 data terakhir untuk menghasilkan 30 prediksi
+    
+    for i in range(start_index, len(angka_str_list) - 1):
+        # Angka saat ini digunakan untuk membuat prediksi
+        current_num_str = angka_str_list[i]
+        # Angka berikutnya adalah hasil sebenarnya untuk validasi (tidak ditampilkan, hanya untuk referensi)
+        # next_num_str = angka_str_list[i+1] 
+        
+        start_digit = current_num_str[0]
+        ai_prediction = prediction_map.get(start_digit, "N/A") # Dapatkan prediksi AI
+        
+        # Format output: [Angka Saat Ini] = [Prediksi AI untuk Angka Berikutnya] ai
+        output_lines.append(f"{current_num_str} = {ai_prediction} ai")
     
     return "\n".join(output_lines)
 
