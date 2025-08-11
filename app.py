@@ -68,13 +68,13 @@ def calculate_angka_main_stats(df, top_n=5):
     return {"jumlah_2d": jumlah_2d, "colok_bebas": colok_bebas}
 
 def calculate_markov_ai_belakang(df, top_n=6):
-    """Menghitung AI Belakang dan AI Lawan menggunakan dua metode Markov yang berbeda."""
+    """Menghitung 4 AI berbeda berdasarkan setiap posisi digit (KOP, AS, KEPALA, EKOR)."""
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
     
-    # --- Metode 1: AI Utama berdasarkan KOP (Digit pertama) ---
+    # --- Metode 1: AI berdasarkan KOP (Digit pertama) ---
     transitions_kop = defaultdict(list)
     for num_str in angka_str_list:
         start_digit = num_str[0]
@@ -87,11 +87,10 @@ def calculate_markov_ai_belakang(df, top_n=6):
         unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
         prediction_map_kop[start_digit] = "".join(unique_top_digits)
 
-    # --- Metode 2: AI Lawan berdasarkan AS (Digit kedua) ---
+    # --- Metode 2: AI berdasarkan AS (Digit kedua) ---
     transitions_as = defaultdict(list)
     for num_str in angka_str_list:
-        start_digit = num_str[1] # Menggunakan AS sebagai pemicu
-        # Mengambil digit selain AS (KOP, KEPALA, EKOR)
+        start_digit = num_str[1]
         following_digits = list(num_str[0] + num_str[2:])
         transitions_as[start_digit].extend(following_digits)
 
@@ -101,17 +100,48 @@ def calculate_markov_ai_belakang(df, top_n=6):
         unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
         prediction_map_as[start_digit] = "".join(unique_top_digits)
 
+    # --- Metode 3: AI berdasarkan KEPALA (Digit ketiga) ---
+    transitions_kepala = defaultdict(list)
+    for num_str in angka_str_list:
+        start_digit = num_str[2]
+        following_digits = list(num_str[0] + num_str[1] + num_str[3])
+        transitions_kepala[start_digit].extend(following_digits)
+
+    prediction_map_kepala = {}
+    for start_digit, following_digits in transitions_kepala.items():
+        top_digits_counts = Counter(following_digits).most_common()
+        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
+        prediction_map_kepala[start_digit] = "".join(unique_top_digits)
+
+    # --- Metode 4: AI berdasarkan EKOR (Digit keempat) ---
+    transitions_ekor = defaultdict(list)
+    for num_str in angka_str_list:
+        start_digit = num_str[3]
+        following_digits = list(num_str[0] + num_str[1] + num_str[2])
+        transitions_ekor[start_digit].extend(following_digits)
+
+    prediction_map_ekor = {}
+    for start_digit, following_digits in transitions_ekor.items():
+        top_digits_counts = Counter(following_digits).most_common()
+        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
+        prediction_map_ekor[start_digit] = "".join(unique_top_digits)
+
+
     output_lines = []
     
     # Menampilkan 30 data historis terakhir secara retrospektif dan kronologis.
     for num_str in angka_str_list[-30:]:
         kop_digit = num_str[0]
         as_digit = num_str[1]
+        kepala_digit = num_str[2]
+        ekor_digit = num_str[3]
         
-        ai_utama = prediction_map_kop.get(kop_digit, "")
-        ai_lawan = prediction_map_as.get(as_digit, "")
+        ai_1 = prediction_map_kop.get(kop_digit, "")
+        ai_2 = prediction_map_as.get(as_digit, "")
+        ai_3 = prediction_map_kepala.get(kepala_digit, "")
+        ai_4 = prediction_map_ekor.get(ekor_digit, "")
         
-        output_lines.append(f"{num_str} = {ai_utama} ai vs {ai_lawan} ai")
+        output_lines.append(f"{num_str} = {ai_1} vs {ai_2} vs {ai_3} vs {ai_4} ai")
     
     return "\n".join(output_lines)
 
