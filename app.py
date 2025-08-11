@@ -68,37 +68,28 @@ def calculate_angka_main(df, top_n=5):
 
     angka_str = df["angka"].astype(str).str.zfill(4)
     
-    # AI 2D (Depan, Tengah, Belakang) - diubah menjadi multiline
-    depan = angka_str.str[:2]
-    ai_depan = "\n".join(depan.value_counts().nlargest(top_n).index)
+    # --- PERUBAHAN LOGIKA ---
+    # Menghitung angka 4D yang paling sering muncul
+    top_4d_numbers = "\n".join(angka_str.value_counts().nlargest(top_n).index)
     
-    tengah = angka_str.str[1:3]
-    ai_tengah = "\n".join(tengah.value_counts().nlargest(top_n).index)
-    
-    belakang = angka_str.str[2:]
-    ai_belakang = "\n".join(belakang.value_counts().nlargest(top_n).index)
-    
-    # Jumlah 2D (berdasarkan digit belakang)
+    # Jumlah 2D (berdasarkan digit belakang) - logika tetap sama
     puluhan = angka_str.str[2].astype(int)
     satuan = angka_str.str[3].astype(int)
     jumlah = (puluhan + satuan) % 10
     jumlah_2d = ", ".join(map(str, jumlah.value_counts().nlargest(top_n).index))
     
-    # Colok Bebas (digit paling sering muncul)
+    # Colok Bebas (digit paling sering muncul) - logika tetap sama
     all_digits = "".join(angka_str.tolist())
     colok_bebas = ", ".join([item[0] for item in Counter(all_digits).most_common(top_n)])
     
-    # AI 3D (berdasarkan 3 digit belakang) - diubah menjadi multiline
-    ai_3d_series = angka_str.str[1:]
-    ai_3d = "\n".join(ai_3d_series.value_counts().nlargest(top_n).index)
-
+    # Mengembalikan hasil. AI Depan, Tengah, Belakang, dan 3D sekarang menampilkan top 4D.
     return {
-        "ai_depan": ai_depan,
-        "ai_tengah": ai_tengah,
-        "ai_belakang": ai_belakang,
+        "ai_depan": top_4d_numbers,
+        "ai_tengah": top_4d_numbers,
+        "ai_belakang": top_4d_numbers,
         "jumlah_2d": jumlah_2d,
         "colok_bebas": colok_bebas,
-        "ai_3d": ai_3d,
+        "ai_3d": top_4d_numbers,
     }
 
 class PositionalEncoding(tf.keras.layers.Layer):
@@ -259,7 +250,7 @@ with st.sidebar:
     putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
     st.markdown("---")
     st.markdown("### 🎯 Opsi Prediksi")
-    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 4) # Mengubah default ke 4
+    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 4)
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
     use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
     model_type = "transformer" if use_transformer else "lstm"
@@ -355,7 +346,7 @@ with tab_manajemen:
                     os.remove(model_path); st.rerun()
             else:
                 st.warning("⚠️ Belum ada")
-    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+    if st.button("� Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
         if len(df) < max_ws + 10:
             st.error(f"Data tidak cukup untuk melatih. Butuh setidaknya {max_ws + 10} baris.")
@@ -423,13 +414,12 @@ with tab_angka_main:
         st.warning("Data historis tidak cukup untuk melakukan analisis (minimal 10 baris).")
     else:
         with st.spinner("Menganalisis Angka Main..."):
-            # Memanggil fungsi dengan jumlah digit dari sidebar
             am = calculate_angka_main(df, top_n=jumlah_digit)
             
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("##### Analisis 2D & 3D")
-                # Menggunakan text_area untuk menampilkan hasil multiline
+                st.markdown("##### Analisis Angka")
+                
                 st.markdown("**AI Depan**")
                 st.text_area("ai_depan_area", am['ai_depan'], height=(jumlah_digit * 20) + 10, disabled=True, label_visibility="collapsed")
                 
