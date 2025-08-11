@@ -218,8 +218,14 @@ with st.sidebar:
     window_per_digit = {}
     for label in DIGIT_LABELS:
         # --- PERUBAHAN DI SINI ---
-        # Mengubah rentang slider dari 3-30 menjadi 1-100
-        window_per_digit[label] = st.slider(f"{label.upper()}", 1, 100, st.session_state[f"win_{label}"], key=f"win_{label}")
+        # Mengganti st.slider menjadi st.number_input
+        window_per_digit[label] = st.number_input(
+            f"{label.upper()}", 
+            min_value=1, 
+            max_value=100, 
+            value=st.session_state[f"win_{label}"], 
+            key=f"win_{label}"
+        )
 
 # --- KONTEN UTAMA ---
 col1, col2 = st.columns([1, 4])
@@ -295,7 +301,7 @@ with tab_manajemen:
                     os.remove(model_path); st.rerun()
             else:
                 st.warning("⚠️ Belum ada")
-    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+    if st.button("� Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
         if len(df) < max_ws + 10:
             st.error(f"Data tidak cukup untuk melatih. Butuh setidaknya {max_ws + 10} baris.")
@@ -308,8 +314,6 @@ with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
     st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     scan_cols = st.columns(2)
-    # --- PERUBAHAN DI SINI ---
-    # Menyesuaikan rentang input untuk scan agar konsisten dengan slider
     min_ws = scan_cols[0].number_input("Min WS", 1, 99, 3)
     max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 100, 25)
     
@@ -355,3 +359,4 @@ with tab_scan:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
                     st.warning("Tidak ada hasil yang ditemukan.")
+�
