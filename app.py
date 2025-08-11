@@ -68,37 +68,50 @@ def calculate_angka_main_stats(df, top_n=5):
     return {"jumlah_2d": jumlah_2d, "colok_bebas": colok_bebas}
 
 def calculate_markov_ai_belakang(df, top_n=6):
-    """Menghitung AI Belakang dan AI Lawan menggunakan metode Markov."""
+    """Menghitung AI Belakang dan AI Lawan menggunakan dua metode Markov yang berbeda."""
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
     
-    transitions = defaultdict(list)
+    # --- Metode 1: AI Utama berdasarkan KOP (Digit pertama) ---
+    transitions_kop = defaultdict(list)
     for num_str in angka_str_list:
         start_digit = num_str[0]
         following_digits = list(num_str[1:])
-        transitions[start_digit].extend(following_digits)
+        transitions_kop[start_digit].extend(following_digits)
 
-    prediction_map = {}
-    for start_digit, following_digits in transitions.items():
+    prediction_map_kop = {}
+    for start_digit, following_digits in transitions_kop.items():
         top_digits_counts = Counter(following_digits).most_common()
         unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
-        prediction_map[start_digit] = "".join(unique_top_digits)
+        prediction_map_kop[start_digit] = "".join(unique_top_digits)
+
+    # --- Metode 2: AI Lawan berdasarkan AS (Digit kedua) ---
+    transitions_as = defaultdict(list)
+    for num_str in angka_str_list:
+        start_digit = num_str[1] # Menggunakan AS sebagai pemicu
+        # Mengambil digit selain AS (KOP, KEPALA, EKOR)
+        following_digits = list(num_str[0] + num_str[2:])
+        transitions_as[start_digit].extend(following_digits)
+
+    prediction_map_as = {}
+    for start_digit, following_digits in transitions_as.items():
+        top_digits_counts = Counter(following_digits).most_common()
+        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
+        prediction_map_as[start_digit] = "".join(unique_top_digits)
 
     output_lines = []
     
     # Menampilkan 30 data historis terakhir secara retrospektif dan kronologis.
     for num_str in angka_str_list[-30:]:
-        start_digit = num_str[0]
-        ai_prediction = prediction_map.get(start_digit, "")
+        kop_digit = num_str[0]
+        as_digit = num_str[1]
         
-        # --- LOGIKA BARU UNTUK AI LAWAN ---
-        all_possible_digits = set("0123456789")
-        ai_set = set(ai_prediction)
-        ai_lawan = "".join(sorted(list(all_possible_digits - ai_set)))
+        ai_utama = prediction_map_kop.get(kop_digit, "")
+        ai_lawan = prediction_map_as.get(as_digit, "")
         
-        output_lines.append(f"{num_str} = {ai_prediction} ai vs {ai_lawan} ai")
+        output_lines.append(f"{num_str} = {ai_utama} ai vs {ai_lawan} ai")
     
     return "\n".join(output_lines)
 
