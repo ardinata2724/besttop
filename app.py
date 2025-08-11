@@ -217,7 +217,6 @@ with st.sidebar:
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {}
     for label in DIGIT_LABELS:
-        # --- PERUBAHAN DI SINI ---
         # Mengganti st.slider menjadi st.number_input
         window_per_digit[label] = st.number_input(
             f"{label.upper()}", 
@@ -301,7 +300,7 @@ with tab_manajemen:
                     os.remove(model_path); st.rerun()
             else:
                 st.warning("⚠️ Belum ada")
-    if st.button("� Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
+    if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
         if len(df) < max_ws + 10:
             st.error(f"Data tidak cukup untuk melatih. Butuh setidaknya {max_ws + 10} baris.")
@@ -359,4 +358,3 @@ with tab_scan:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
                     st.warning("Tidak ada hasil yang ditemukan.")
-�
