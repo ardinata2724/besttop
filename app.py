@@ -67,81 +67,43 @@ def calculate_angka_main_stats(df, top_n=5):
     
     return {"jumlah_2d": jumlah_2d, "colok_bebas": colok_bebas}
 
+def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
+    """Helper function untuk membuat peta prediksi AI berdasarkan transisi digit."""
+    transitions = defaultdict(list)
+    for num_str in angka_list:
+        start_digit = num_str[start_digit_idx]
+        # Mengambil semua digit lain kecuali start_digit
+        following_digits = [d for i, d in enumerate(num_str) if i != start_digit_idx]
+        transitions[start_digit].extend(following_digits)
+
+    prediction_map = {}
+    for start_digit, following_digits in transitions.items():
+        top_digits_counts = Counter(following_digits).most_common()
+        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
+        prediction_map[start_digit] = "".join(unique_top_digits)
+    return prediction_map
+
 def calculate_markov_ai_belakang(df, top_n=6):
-    """Menghitung 4 AI berbeda berdasarkan setiap posisi digit (KOP, AS, KEPALA, EKOR)."""
+    """
+    Menghitung 4 AI berbeda berdasarkan setiap posisi digit (KOP, AS, KEPALA, EKOR).
+    Direfactor untuk mengurangi duplikasi kode.
+    """
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
     
-    # --- Metode 1: AI berdasarkan KOP (Digit pertama) ---
-    transitions_kop = defaultdict(list)
-    for num_str in angka_str_list:
-        start_digit = num_str[0]
-        following_digits = list(num_str[1:])
-        transitions_kop[start_digit].extend(following_digits)
-
-    prediction_map_kop = {}
-    for start_digit, following_digits in transitions_kop.items():
-        top_digits_counts = Counter(following_digits).most_common()
-        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
-        prediction_map_kop[start_digit] = "".join(unique_top_digits)
-
-    # --- Metode 2: AI berdasarkan AS (Digit kedua) ---
-    transitions_as = defaultdict(list)
-    for num_str in angka_str_list:
-        start_digit = num_str[1]
-        following_digits = list(num_str[0] + num_str[2:])
-        transitions_as[start_digit].extend(following_digits)
-
-    prediction_map_as = {}
-    for start_digit, following_digits in transitions_as.items():
-        top_digits_counts = Counter(following_digits).most_common()
-        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
-        prediction_map_as[start_digit] = "".join(unique_top_digits)
-
-    # --- Metode 3: AI berdasarkan KEPALA (Digit ketiga) ---
-    transitions_kepala = defaultdict(list)
-    for num_str in angka_str_list:
-        start_digit = num_str[2]
-        following_digits = list(num_str[0] + num_str[1] + num_str[3])
-        transitions_kepala[start_digit].extend(following_digits)
-
-    prediction_map_kepala = {}
-    for start_digit, following_digits in transitions_kepala.items():
-        top_digits_counts = Counter(following_digits).most_common()
-        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
-        prediction_map_kepala[start_digit] = "".join(unique_top_digits)
-
-    # --- Metode 4: AI berdasarkan EKOR (Digit keempat) ---
-    transitions_ekor = defaultdict(list)
-    for num_str in angka_str_list:
-        start_digit = num_str[3]
-        following_digits = list(num_str[0] + num_str[1] + num_str[2])
-        transitions_ekor[start_digit].extend(following_digits)
-
-    prediction_map_ekor = {}
-    for start_digit, following_digits in transitions_ekor.items():
-        top_digits_counts = Counter(following_digits).most_common()
-        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
-        prediction_map_ekor[start_digit] = "".join(unique_top_digits)
-
-
-    output_lines = []
+    # Membuat peta prediksi untuk setiap posisi (0=KOP, 1=AS, 2=KEPALA, 3=EKOR)
+    prediction_maps = [
+        _get_ai_prediction_map(angka_str_list, i, top_n) for i in range(4)
+    ]
     
-    # Menampilkan 30 data historis terakhir secara retrospektif dan kronologis.
+    output_lines = []
+    # Menampilkan 30 data historis terakhir
     for num_str in angka_str_list[-30:]:
-        kop_digit = num_str[0]
-        as_digit = num_str[1]
-        kepala_digit = num_str[2]
-        ekor_digit = num_str[3]
-        
-        ai_1 = prediction_map_kop.get(kop_digit, "")
-        ai_2 = prediction_map_as.get(as_digit, "")
-        ai_3 = prediction_map_kepala.get(kepala_digit, "")
-        ai_4 = prediction_map_ekor.get(ekor_digit, "")
-        
-        output_lines.append(f"{num_str} = {ai_1} vs {ai_2} vs {ai_3} vs {ai_4} ai")
+        # Mendapatkan AI dari setiap peta berdasarkan digit pada posisi yang sesuai
+        ais = [pred_map.get(num_str[i], "") for i, pred_map in enumerate(prediction_maps)]
+        output_lines.append(f"{num_str} = {' vs '.join(ais)} ai")
     
     return "\n".join(output_lines)
 
@@ -324,21 +286,25 @@ with st.sidebar:
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
-        try:
-            with st.spinner("🔄 Mengambil data..."):
-                url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
-                headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
-                response = requests.get(url, headers=headers, timeout=10)
-                response.raise_for_status()
-                data = response.json()
-                if data.get("data"):
-                    angka_api = [d["result"] for d in data["data"] if len(str(d.get("result", ""))) == 4 and str(d.get("result", "")).isdigit()]
-                    st.session_state.angka_list = angka_api
-                    st.success(f"{len(angka_api)} angka berhasil diambil.")
-                else:
-                    st.error("API tidak mengembalikan data yang valid.")
-        except Exception as e:
-            st.error(f"Gagal mengambil data dari API: {e}")
+        if "API_KEY" not in st.secrets:
+            st.error("Kunci API tidak ditemukan. Harap tambahkan `API_KEY` ke file `secrets.toml` Anda.")
+        else:
+            try:
+                with st.spinner("🔄 Mengambil data..."):
+                    url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
+                    # [FIX] Menggunakan st.secrets untuk keamanan API Key
+                    headers = {"Authorization": f"Bearer {st.secrets['API_KEY']}"}
+                    response = requests.get(url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    data = response.json()
+                    if data.get("data"):
+                        angka_api = [d["result"] for d in data["data"] if len(str(d.get("result", ""))) == 4 and str(d.get("result", "")).isdigit()]
+                        st.session_state.angka_list = angka_api
+                        st.success(f"{len(angka_api)} angka berhasil diambil.")
+                    else:
+                        st.error("API tidak mengembalikan data yang valid.")
+            except Exception as e:
+                st.error(f"Gagal mengambil data dari API: {e}")
 
 with col2: st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
 with st.expander("✏️ Edit Data Angka Manual", expanded=True):
@@ -377,10 +343,15 @@ with tab_prediksi:
                     st.markdown(f"**{label.upper()}:** {', '.join(map(str, result[i]))}")
                 
                 st.divider()
+                # [FIX] Kalkulasi jumlah kombinasi yang efisien
+                total_kombinasi = np.prod([len(r) for r in result])
+                st.subheader(f"🔢 Semua Kombinasi 4D ({total_kombinasi} Line)")
+
+                if total_kombinasi > 5000:
+                    st.warning(f"Jumlah kombinasi ({total_kombinasi}) sangat besar. Menampilkan semua kombinasi mungkin akan membuat browser lambat.")
+                
                 all_combinations = list(product(*result))
                 kombinasi_4d_list = ["".join(map(str, combo)) for combo in all_combinations]
-                total_kombinasi = len(kombinasi_4d_list)
-                st.subheader(f"🔢 Semua Kombinasi 4D ({total_kombinasi} Line)")
                 output_string = " * ".join(kombinasi_4d_list)
                 st.text_area(f"Total {total_kombinasi} Kombinasi Penuh", output_string, height=300)
 
@@ -411,11 +382,15 @@ with tab_manajemen:
 # --- TAB SCAN WINDOW SIZE ---
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Hasilnya akan muncul dan tetap ada. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    st.info("Klik tombol scan untuk setiap digit. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 1, 99, 3)
-    max_ws = scan_cols[1].number_input("Max WS", min_ws + 1, 100, 25)
     
+    # [FIX] Mengubah logika nilai default `Max WS` untuk mencegah error.
+    # Nilai default untuk Max WS kini dihitung agar selalu lebih besar dari Min WS.
+    default_max_ws = min_ws + 22
+    max_ws = scan_cols[1].number_input("Max WS", min_value=min_ws + 1, max_value=100, value=default_max_ws)
+
     if st.button("❌ Hapus Hasil Scan"):
         st.session_state.scan_outputs = {}
         st.rerun()
@@ -424,9 +399,12 @@ with tab_scan:
     btn_cols = st.columns(4)
     for i, label in enumerate(DIGIT_LABELS):
         if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
-            st.toast(f"🔎 Sedang memindai {label.upper()}, mohon tunggu...", icon="⏳")
-            st.session_state.scan_outputs[label] = "PENDING"
-            st.rerun()
+            if len(df) < max_ws + 10:
+                st.error(f"Data tidak cukup untuk scan. Butuh setidaknya {max_ws + 10} baris.")
+            else:
+                st.toast(f"🔎 Sedang memindai {label.upper()}, mohon tunggu...", icon="⏳")
+                st.session_state.scan_outputs[label] = "PENDING"
+                st.rerun()
 
     for label in [l for l in DIGIT_LABELS if l in st.session_state.scan_outputs]:
         data = st.session_state.scan_outputs[label]
@@ -442,7 +420,6 @@ with tab_scan:
                     st.dataframe(result_df)
                     st.markdown("---")
                     st.markdown("👇 **Salin Hasil dari Kolom Top-N**")
-                    
                     top_n_column_name = f"Top-{jumlah_digit}"
 
                     if top_n_column_name in result_df.columns:
@@ -458,7 +435,7 @@ with tab_scan:
                     else:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
-                    st.warning("Tidak ada hasil yang ditemukan.")
+                    st.warning("Tidak ada hasil yang ditemukan untuk rentang WS yang diberikan.")
 
 # --- TAB ANGKA MAIN ---
 with tab_angka_main:
@@ -467,8 +444,7 @@ with tab_angka_main:
     if len(df) < 10:
         st.warning("Data historis tidak cukup untuk melakukan analisis (minimal 10 baris).")
     else:
-        # --- PERUBAHAN TAMPILAN DAN LOGIKA ---
-        col1, col2 = st.columns([2, 1]) # Memberi lebih banyak ruang untuk hasil markov
+        col1, col2 = st.columns([2, 1]) 
         with col1:
             st.markdown("##### Analisis AI Belakang (Markov)")
             with st.spinner("Menganalisis AI Markov..."):
