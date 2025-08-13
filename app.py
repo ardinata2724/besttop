@@ -79,8 +79,25 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
     prediction_map = {}
     for start_digit, following_digits in transitions.items():
         top_digits_counts = Counter(following_digits).most_common()
-        unique_top_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))[:top_n]
-        prediction_map[start_digit] = "".join(unique_top_digits)
+        
+        # Dapatkan daftar digit unik dari data, dengan urutan berdasarkan frekuensi
+        final_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))
+        
+        # Jika daftar lebih pendek dari top_n, tambahkan digit acak yang belum ada
+        if len(final_digits) < top_n:
+            all_possible_digits = list(map(str, range(10)))
+            random.shuffle(all_possible_digits)
+            current_digits_set = set(final_digits)
+            
+            for digit in all_possible_digits:
+                if len(final_digits) >= top_n:
+                    break
+                if digit not in current_digits_set:
+                    final_digits.append(digit)
+
+        # Potong sesuai panjang yang diinginkan dan gabungkan menjadi string
+        prediction_map[start_digit] = "".join(final_digits[:top_n])
+        
     return prediction_map
 
 def calculate_markov_ai_belakang(df, top_n=6):
