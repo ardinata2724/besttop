@@ -106,7 +106,7 @@ def calculate_markov_ai(df, top_n=6, mode='belakang'):
         return "Data tidak cukup untuk analisis."
 
     # Petakan mode ke indeks digit yang sesuai
-    mode_to_idx = {'belakang': 0, 'tengah': 1, 'depan': 3}
+    mode_to_idx = {'depan': 3, 'tengah': 1, 'belakang': 0}
     if mode not in mode_to_idx:
         return f"Mode analisis tidak valid: {mode}"
     
@@ -536,15 +536,15 @@ with tab_angka_main:
         with col1:
             st.markdown("##### Analisis AI Berdasarkan Posisi")
 
-            with st.expander("Analisis AI Belakang (berdasarkan digit KOP/Ribuan)", expanded=True):
-                with st.spinner("Menganalisis AI Belakang..."):
-                    result_belakang = calculate_markov_ai(df, top_n=jumlah_digit, mode='belakang')
+            with st.expander("Analisis AI Depan (berdasarkan digit EKOR/Satuan)", expanded=True):
+                with st.spinner("Menganalisis AI Depan..."):
+                    result_depan = calculate_markov_ai(df, top_n=jumlah_digit, mode='depan')
                 st.text_area(
-                    "Hasil Analisis (Belakang)",
-                    result_belakang,
+                    "Hasil Analisis (Depan)",
+                    result_depan,
                     height=300,
                     label_visibility="collapsed",
-                    key="ai_belakang"
+                    key="ai_depan"
                 )
 
             with st.expander("Analisis AI Tengah (berdasarkan digit AS/Ratusan)"):
@@ -557,16 +557,16 @@ with tab_angka_main:
                     label_visibility="collapsed",
                     key="ai_tengah"
                 )
-
-            with st.expander("Analisis AI Depan (berdasarkan digit EKOR/Satuan)"):
-                with st.spinner("Menganalisis AI Depan..."):
-                    result_depan = calculate_markov_ai(df, top_n=jumlah_digit, mode='depan')
+            
+            with st.expander("Analisis AI Belakang (berdasarkan digit KOP/Ribuan)"):
+                with st.spinner("Menganalisis AI Belakang..."):
+                    result_belakang = calculate_markov_ai(df, top_n=jumlah_digit, mode='belakang')
                 st.text_area(
-                    "Hasil Analisis (Depan)",
-                    result_depan,
+                    "Hasil Analisis (Belakang)",
+                    result_belakang,
                     height=300,
                     label_visibility="collapsed",
-                    key="ai_depan"
+                    key="ai_belakang"
                 )
 
         with col2:
