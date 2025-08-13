@@ -113,14 +113,24 @@ def preprocess_data(df, window_size=7):
     """Mempersiapkan data sekuensial untuk model AI."""
     if len(df) < window_size + 1: return np.array([]), {}
     angka = df["angka"].values
-    sequences, targets = [], {label: [] for label in DIGIT_LABELS}
+    # Tambahkan 'jumlah' ke inisialisasi dictionary target
+    labels_to_process = DIGIT_LABELS + ["jumlah"]
+    sequences, targets = [], {label: [] for label in labels_to_process}
+    
     for i in range(len(angka) - window_size):
         window = [str(x).zfill(4) for x in angka[i:i+window_size+1]]
         if any(not x.isdigit() for x in window): continue
         sequences.append([int(d) for num in window[:-1] for d in num])
         target_digits = [int(d) for d in window[-1]]
+        
+        # Proses target untuk ribuan, ratusan, puluhan, satuan
         for j, label in enumerate(DIGIT_LABELS):
             targets[label].append(to_categorical(target_digits[j], num_classes=10))
+            
+        # Hitung dan proses target untuk 'jumlah'
+        jumlah_target = (target_digits[2] + target_digits[3]) % 10
+        targets["jumlah"].append(to_categorical(jumlah_target, num_classes=10))
+        
     return np.array(sequences), {label: np.array(v) for label, v in targets.items()}
 
 def build_model(input_len, model_type="lstm"):
@@ -369,8 +379,6 @@ with tab_scan:
     st.info("Klik tombol scan untuk setiap digit. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     scan_cols = st.columns(2)
     
-    # [FIX] Mengubah logika agar nilai input tidak di-reset.
-    # Menggunakan nilai default statis yang tidak bergantung satu sama lain.
     min_ws = scan_cols[0].number_input("Min WS", min_value=1, max_value=99, value=1)
     max_ws = scan_cols[1].number_input("Max WS", min_value=1, max_value=100, value=25)
 
@@ -383,9 +391,13 @@ with tab_scan:
         st.session_state.scan_outputs = {}
         st.rerun()
     st.divider()
-
-    btn_cols = st.columns(4)
-    for i, label in enumerate(DIGIT_LABELS):
+    
+    # Tambahkan 'jumlah' ke daftar label untuk pemindaian
+    SCAN_LABELS = DIGIT_LABELS + ["jumlah"]
+    
+    # Buat kolom tombol secara dinamis
+    btn_cols = st.columns(len(SCAN_LABELS))
+    for i, label in enumerate(SCAN_LABELS):
         # Tombol scan hanya bisa ditekan jika rentang WS valid
         if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True, disabled=not scan_ready):
             if len(df) < max_ws + 10:
@@ -395,7 +407,8 @@ with tab_scan:
                 st.session_state.scan_outputs[label] = "PENDING"
                 st.rerun()
 
-    for label in [l for l in DIGIT_LABELS if l in st.session_state.scan_outputs]:
+    # Tampilkan hasil untuk semua label yang dipindai, termasuk 'jumlah'
+    for label in [l for l in SCAN_LABELS if l in st.session_state.scan_outputs]:
         data = st.session_state.scan_outputs[label]
         with st.expander(f"Hasil Scan untuk {label.upper()}", expanded=True):
             if data == "PENDING":
