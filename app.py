@@ -84,17 +84,23 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
     return prediction_map
 
 def calculate_markov_ai_belakang(df, top_n=6):
-    """Menghitung 4 AI berbeda berdasarkan setiap posisi digit (KOP, AS, KEPALA, EKOR)."""
+    """Menghitung AI belakang berdasarkan transisi dari digit pertama (Ribuan/KOP)."""
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
-    prediction_maps = [_get_ai_prediction_map(angka_str_list, i, top_n) for i in range(4)]
+    # Buat hanya satu peta prediksi, berdasarkan digit pertama (index 0).
+    prediction_map = _get_ai_prediction_map(angka_str_list, start_digit_idx=0, top_n=top_n)
     
     output_lines = []
+    # Ambil 30 data terakhir untuk ditampilkan
     for num_str in angka_str_list[-30:]:
-        ais = [pred_map.get(num_str[i], "") for i, pred_map in enumerate(prediction_maps)]
-        output_lines.append(f"{num_str} = {' vs '.join(ais)} ai")
+        # Dapatkan digit pertama dari angka historis
+        start_digit = num_str[0]
+        # Dapatkan prediksi AI yang sesuai dari peta
+        ai = prediction_map.get(start_digit, "")
+        # Format output sesuai permintaan
+        output_lines.append(f"{num_str} = {ai} ai")
     
     return "\n".join(output_lines)
 
@@ -505,7 +511,7 @@ with tab_angka_main:
     else:
         col1, col2 = st.columns([2, 1]) 
         with col1:
-            st.markdown("##### Analisis AI Belakang (Markov)")
+            st.markdown("##### Analisis AI Belakang")
             with st.spinner("Menganalisis AI Markov..."):
                 markov_result = calculate_markov_ai_belakang(df, top_n=jumlah_digit)
             
