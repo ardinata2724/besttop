@@ -339,6 +339,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🎯 Opsi Prediksi")
     jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 6)
+    jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
     use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
     model_type = "transformer" if use_transformer else "lstm"
