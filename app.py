@@ -100,23 +100,29 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
         
     return prediction_map
 
-def calculate_markov_ai_belakang(df, top_n=6):
-    """Menghitung AI belakang berdasarkan transisi dari digit pertama (Ribuan/KOP)."""
+def calculate_markov_ai(df, top_n=6, mode='belakang'):
+    """Menghitung AI berdasarkan transisi dari posisi digit yang dipilih."""
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
+    # Petakan mode ke indeks digit yang sesuai
+    mode_to_idx = {'belakang': 0, 'tengah': 1, 'depan': 3}
+    if mode not in mode_to_idx:
+        return f"Mode analisis tidak valid: {mode}"
+    
+    start_idx = mode_to_idx[mode]
+
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
-    # Buat hanya satu peta prediksi, berdasarkan digit pertama (index 0).
-    prediction_map = _get_ai_prediction_map(angka_str_list, start_digit_idx=0, top_n=top_n)
+    prediction_map = _get_ai_prediction_map(angka_str_list, start_digit_idx=start_idx, top_n=top_n)
     
     output_lines = []
     # Ambil 30 data terakhir untuk ditampilkan
     for num_str in angka_str_list[-30:]:
-        # Dapatkan digit pertama dari angka historis
-        start_digit = num_str[0]
+        # Dapatkan digit pemicu dari angka historis
+        start_digit = num_str[start_idx]
         # Dapatkan prediksi AI yang sesuai dari peta
         ai = prediction_map.get(start_digit, "")
-        # Format output sesuai permintaan
+        # Format output
         output_lines.append(f"{num_str} = {ai} ai")
     
     return "\n".join(output_lines)
@@ -528,16 +534,40 @@ with tab_angka_main:
     else:
         col1, col2 = st.columns([2, 1]) 
         with col1:
-            st.markdown("##### Analisis AI Belakang")
-            with st.spinner("Menganalisis AI Markov..."):
-                markov_result = calculate_markov_ai_belakang(df, top_n=jumlah_digit)
-            
-            st.text_area(
-                "Hasil Analisis Markov (Dapat Disalin)",
-                markov_result,
-                height=400,
-                label_visibility="collapsed"
-            )
+            st.markdown("##### Analisis AI Berdasarkan Posisi")
+
+            with st.expander("Analisis AI Belakang (berdasarkan digit KOP/Ribuan)", expanded=True):
+                with st.spinner("Menganalisis AI Belakang..."):
+                    result_belakang = calculate_markov_ai(df, top_n=jumlah_digit, mode='belakang')
+                st.text_area(
+                    "Hasil Analisis (Belakang)",
+                    result_belakang,
+                    height=300,
+                    label_visibility="collapsed",
+                    key="ai_belakang"
+                )
+
+            with st.expander("Analisis AI Tengah (berdasarkan digit AS/Ratusan)"):
+                with st.spinner("Menganalisis AI Tengah..."):
+                    result_tengah = calculate_markov_ai(df, top_n=jumlah_digit, mode='tengah')
+                st.text_area(
+                    "Hasil Analisis (Tengah)",
+                    result_tengah,
+                    height=300,
+                    label_visibility="collapsed",
+                    key="ai_tengah"
+                )
+
+            with st.expander("Analisis AI Depan (berdasarkan digit EKOR/Satuan)"):
+                with st.spinner("Menganalisis AI Depan..."):
+                    result_depan = calculate_markov_ai(df, top_n=jumlah_digit, mode='depan')
+                st.text_area(
+                    "Hasil Analisis (Depan)",
+                    result_depan,
+                    height=300,
+                    label_visibility="collapsed",
+                    key="ai_depan"
+                )
 
         with col2:
             st.markdown("##### Statistik Lainnya")
