@@ -286,25 +286,22 @@ with st.sidebar:
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
-        if "API_KEY" not in st.secrets:
-            st.error("Kunci API tidak ditemukan. Harap tambahkan `API_KEY` ke file `secrets.toml` Anda.")
-        else:
-            try:
-                with st.spinner("🔄 Mengambil data..."):
-                    url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
-                    # [FIX] Menggunakan st.secrets untuk keamanan API Key
-                    headers = {"Authorization": f"Bearer {st.secrets['API_KEY']}"}
-                    response = requests.get(url, headers=headers, timeout=10)
-                    response.raise_for_status()
-                    data = response.json()
-                    if data.get("data"):
-                        angka_api = [d["result"] for d in data["data"] if len(str(d.get("result", ""))) == 4 and str(d.get("result", "")).isdigit()]
-                        st.session_state.angka_list = angka_api
-                        st.success(f"{len(angka_api)} angka berhasil diambil.")
-                    else:
-                        st.error("API tidak mengembalikan data yang valid.")
-            except Exception as e:
-                st.error(f"Gagal mengambil data dari API: {e}")
+        try:
+            with st.spinner("🔄 Mengambil data..."):
+                url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
+                # [DIKEMBALIKAN] Kunci API ditanamkan langsung untuk fungsionalitas otomatis
+                headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                if data.get("data"):
+                    angka_api = [d["result"] for d in data["data"] if len(str(d.get("result", ""))) == 4 and str(d.get("result", "")).isdigit()]
+                    st.session_state.angka_list = angka_api
+                    st.success(f"{len(angka_api)} angka berhasil diambil.")
+                else:
+                    st.error("API tidak mengembalikan data yang valid.")
+        except Exception as e:
+            st.error(f"Gagal mengambil data dari API: {e}")
 
 with col2: st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
 with st.expander("✏️ Edit Data Angka Manual", expanded=True):
@@ -343,7 +340,7 @@ with tab_prediksi:
                     st.markdown(f"**{label.upper()}:** {', '.join(map(str, result[i]))}")
                 
                 st.divider()
-                # [FIX] Kalkulasi jumlah kombinasi yang efisien
+                # Kalkulasi jumlah kombinasi yang efisien
                 total_kombinasi = np.prod([len(r) for r in result])
                 st.subheader(f"🔢 Semua Kombinasi 4D ({total_kombinasi} Line)")
 
@@ -386,7 +383,6 @@ with tab_scan:
     scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 1, 99, 3)
     
-    # [FIX] Mengubah logika nilai default `Max WS` untuk mencegah error.
     # Nilai default untuk Max WS kini dihitung agar selalu lebih besar dari Min WS.
     default_max_ws = min_ws + 22
     max_ws = scan_cols[1].number_input("Max WS", min_value=min_ws + 1, max_value=100, value=default_max_ws)
