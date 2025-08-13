@@ -23,6 +23,7 @@ from datetime import datetime
 # BAGIAN 1: DEFINISI SEMUA FUNGSI-FUNGSI INTI
 # ==============================================================================
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
+BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
 
 def _ensure_unique_top_n(top_list, n=6):
     """Memastikan daftar top-N memiliki item unik hingga N."""
@@ -110,11 +111,11 @@ class PositionalEncoding(tf.keras.layers.Layer):
         return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
 
 def preprocess_data(df, window_size=7):
-    """Mempersiapkan data sekuensial untuk model AI."""
+    """Mempersiapkan data sekuensial untuk model AI, termasuk target multi-label untuk BBFS."""
     if len(df) < window_size + 1: return np.array([]), {}
     angka = df["angka"].values
-    # Tambahkan 'jumlah' ke inisialisasi dictionary target
-    labels_to_process = DIGIT_LABELS + ["jumlah"]
+    
+    labels_to_process = DIGIT_LABELS + ["jumlah"] + BBFS_LABELS
     sequences, targets = [], {label: [] for label in labels_to_process}
     
     for i in range(len(angka) - window_size):
@@ -123,18 +124,30 @@ def preprocess_data(df, window_size=7):
         sequences.append([int(d) for num in window[:-1] for d in num])
         target_digits = [int(d) for d in window[-1]]
         
-        # Proses target untuk ribuan, ratusan, puluhan, satuan
+        # Target multi-class (satu jawaban benar)
         for j, label in enumerate(DIGIT_LABELS):
             targets[label].append(to_categorical(target_digits[j], num_classes=10))
-            
-        # Hitung dan proses target untuk 'jumlah'
+        
         jumlah_target = (target_digits[2] + target_digits[3]) % 10
         targets["jumlah"].append(to_categorical(jumlah_target, num_classes=10))
         
-    return np.array(sequences), {label: np.array(v) for label, v in targets.items()}
+        # Target multi-label (beberapa jawaban benar mungkin) untuk BBFS
+        bbfs_map = {
+            "bbfs_ribuan-ratusan": [target_digits[0], target_digits[1]],
+            "bbfs_ratusan-puluhan": [target_digits[1], target_digits[2]],
+            "bbfs_puluhan-satuan": [target_digits[2], target_digits[3]],
+        }
+        for label, digit_pair in bbfs_map.items():
+            multi_hot_target = np.zeros(10, dtype=np.float32)
+            for digit in np.unique(digit_pair):
+                multi_hot_target[digit] = 1.0
+            targets[label].append(multi_hot_target)
 
-def build_model(input_len, model_type="lstm"):
-    """Membangun arsitektur model AI (LSTM atau Transformer)."""
+    final_targets = {label: np.array(v) for label, v in targets.items() if v}
+    return np.array(sequences), final_targets
+
+def build_model(input_len, model_type="lstm", problem_type="multiclass"):
+    """Membangun arsitektur model AI, mendukung multi-class dan multi-label."""
     inputs = Input(shape=(input_len,))
     x = Embedding(input_dim=10, output_dim=64)(inputs)
     x = PositionalEncoding()(x)
@@ -147,10 +160,18 @@ def build_model(input_len, model_type="lstm"):
     x = GlobalAveragePooling1D()(x)
     x = Dense(128, activation='relu')(x)
     x = Dropout(0.2)(x)
-    outputs = Dense(10, activation='softmax')(x)
+
+    if problem_type == "multilabel":
+        outputs = Dense(10, activation='sigmoid')(x)
+        loss = "binary_crossentropy"
+    else: # multiclass
+        outputs = Dense(10, activation='softmax')(x)
+        loss = "categorical_crossentropy"
+
     model = Model(inputs, outputs)
-    model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-    return model
+    # Kompilasi dipindahkan ke find_best_window_size untuk metrik dinamis
+    return model, loss
+
 
 def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
     """Melakukan prediksi menggunakan model AI yang sudah dilatih."""
@@ -174,36 +195,63 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
     return results, probs
 
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
-    """Mencari window size terbaik dengan melatih dan mengevaluasi model."""
+    """Mencari window size terbaik, mendukung masalah multi-class dan multi-label."""
     best_ws, best_score = None, -1
     table_data = []
+    
+    problem_type = "multilabel" if label in BBFS_LABELS else "multiclass"
+    
     progress_bar = st.progress(0.0, text=f"Memulai scan untuk {label.upper()}...")
     total_steps = max(1, max_ws - min_ws + 1)
+    
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
-        progress_bar.progress((i + 1) / total_steps, text=f"Mencoba WS={ws} untuk {label.upper()}...")
+        progress_bar.progress((i + 1) / total_steps, text=f"Mencoba WS={ws} untuk {label.upper()} ({problem_type})...")
         try:
             X, y_dict = preprocess_data(df, window_size=ws)
             if label not in y_dict or y_dict[label].shape[0] < 10: continue
             y = y_dict[label]
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
-            model = build_model(X.shape[1], model_type)
-            model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy", TopKCategoricalAccuracy(k=top_n)])
+
+            model, loss_function = build_model(X.shape[1], model_type, problem_type)
+            
+            metrics = ['accuracy'] # 'accuracy' di Keras berfungsi sbg BinaryAccuracy untuk binary_crossentropy
+            if problem_type == 'multiclass':
+                metrics.append(TopKCategoricalAccuracy(k=top_n))
+            
+            model.compile(optimizer="adam", loss=loss_function, metrics=metrics)
+            
             model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
-            _, acc, top_n_acc = model.evaluate(X_val, y_val, verbose=0)
+            
+            eval_results = model.evaluate(X_val, y_val, verbose=0)
             preds = model.predict(X_val, verbose=0)
             avg_conf = np.mean(np.sort(preds, axis=1)[:, -top_n:]) * 100
             last_pred = model.predict(X[-1:], verbose=0)[0]
             top_n_digits_pred = ", ".join(map(str, np.argsort(last_pred)[::-1][:top_n]))
-            score = (acc * 0.2) + (top_n_acc * 0.5) + (avg_conf/100 * 0.3)
-            table_data.append((ws, f"{acc*100:.2f}", f"{top_n_acc*100:.2f}", f"{avg_conf:.2f}", top_n_digits_pred))
-            if score > best_score: best_score, best_ws = score, ws
-        except Exception: continue
+
+            if problem_type == 'multilabel':
+                acc = eval_results[1]
+                top_n_acc = 0  # Tidak relevan untuk multi-label dengan cara ini
+                score = (acc * 0.7) + (avg_conf / 100 * 0.3)
+                top_n_acc_display = "N/A"
+            else: # multiclass
+                acc = eval_results[1]
+                top_n_acc = eval_results[2]
+                score = (acc * 0.2) + (top_n_acc * 0.5) + (avg_conf / 100 * 0.3)
+                top_n_acc_display = f"{top_n_acc*100:.2f}"
+
+            table_data.append((ws, f"{acc*100:.2f}", top_n_acc_display, f"{avg_conf:.2f}", top_n_digits_pred))
+            if score > best_score:
+                best_score, best_ws = score, ws
+        except Exception:
+            continue
+            
     progress_bar.empty()
     if not table_data: return None, None
     return best_ws, pd.DataFrame(table_data, columns=["Window Size", "Acc (%)", f"Top-{top_n} Acc (%)", "Conf (%)", f"Top-{top_n}"])
 
+
 def train_and_save_model(df, lokasi, window_dict, model_type):
-    """Melatih dan menyimpan model untuk setiap posisi digit."""
+    """Melatih dan menyimpan model untuk setiap posisi digit (hanya untuk multi-class)."""
     st.info(f"Memulai proses pelatihan untuk lokasi: {lokasi} (Model: {model_type.upper()})")
     lokasi_id = lokasi.lower().strip().replace(" ", "_")
     
@@ -230,7 +278,9 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
         progress_text = f"Melatih model untuk {label.upper()}... Ini mungkin akan memakan waktu."
         bar.progress(50, text=progress_text)
 
-        model = build_model(X.shape[1], model_type)
+        model, loss = build_model(X.shape[1], model_type, problem_type='multiclass')
+        model.compile(optimizer='adam', loss=loss, metrics=['accuracy'])
+
         early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
         model.fit(X_train, y_train, epochs=30, batch_size=32, validation_data=(X_val, y_val), callbacks=[early_stopping], verbose=0)
         
@@ -375,8 +425,8 @@ with tab_manajemen:
 
 # --- TAB SCAN WINDOW SIZE ---
 with tab_scan:
-    st.subheader("Pencarian Window Size (WS) Optimal per Digit")
-    st.info("Klik tombol scan untuk setiap digit. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
+    st.subheader("Pencarian Window Size (WS) Optimal per Kategori")
+    st.info("Klik tombol scan untuk setiap kategori. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual** untuk kategori yang relevan.")
     scan_cols = st.columns(2)
     
     min_ws = scan_cols[0].number_input("Min WS", min_value=1, max_value=99, value=1)
@@ -392,25 +442,32 @@ with tab_scan:
         st.rerun()
     st.divider()
     
-    # Tambahkan 'jumlah' ke daftar label untuk pemindaian
-    SCAN_LABELS = DIGIT_LABELS + ["jumlah"]
+    # Definisikan semua label yang bisa di-scan
+    SCAN_LABELS = DIGIT_LABELS + ["jumlah"] + BBFS_LABELS
     
-    # Buat kolom tombol secara dinamis
-    btn_cols = st.columns(len(SCAN_LABELS))
-    for i, label in enumerate(SCAN_LABELS):
-        # Tombol scan hanya bisa ditekan jika rentang WS valid
-        if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True, disabled=not scan_ready):
-            if len(df) < max_ws + 10:
-                st.error(f"Data tidak cukup untuk scan. Butuh setidaknya {max_ws + 10} baris.")
+    # Buat baris tombol untuk setiap kategori
+    st.markdown("**Kategori Digit & Jumlah**")
+    btn_cols_1 = st.columns(len(DIGIT_LABELS) + 1)
+    for i, label in enumerate(DIGIT_LABELS + ["jumlah"]):
+        if btn_cols_1[i].button(f"🔎 Scan {label.upper()}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
+            if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
             else:
-                st.toast(f"🔎 Sedang memindai {label.upper()}, mohon tunggu...", icon="⏳")
-                st.session_state.scan_outputs[label] = "PENDING"
-                st.rerun()
+                st.toast(f"🔎 Memindai {label.upper()}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
 
-    # Tampilkan hasil untuk semua label yang dipindai, termasuk 'jumlah'
+    st.markdown("**Kategori BBFS**")
+    btn_cols_2 = st.columns(len(BBFS_LABELS))
+    for i, label in enumerate(BBFS_LABELS):
+        if btn_cols_2[i].button(f"🔎 Scan {label.replace('_', ' ').upper()}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
+            if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
+            else:
+                st.toast(f"🔎 Memindai {label.upper()}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
+    st.divider()
+    
+    # Tampilkan hasil untuk semua label yang dipindai
     for label in [l for l in SCAN_LABELS if l in st.session_state.scan_outputs]:
         data = st.session_state.scan_outputs[label]
-        with st.expander(f"Hasil Scan untuk {label.upper()}", expanded=True):
+        expander_title = f"Hasil Scan untuk {label.replace('_', ' ').upper()}"
+        with st.expander(expander_title, expanded=True):
             if data == "PENDING":
                 best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit)
                 st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
@@ -427,9 +484,9 @@ with tab_scan:
                     if top_n_column_name in result_df.columns:
                         copyable_text = "\n".join(result_df[top_n_column_name].astype(str))
                         st.text_area(
-                            "Klik di dalam kotak di bawah lalu tekan Ctrl+A dan Ctrl+C untuk menyalin semua baris.",
+                            f"Klik untuk menyalin (kolom {top_n_column_name})",
                             value=copyable_text,
-                            height=250
+                            height=250, key=f"copy_{label}"
                         )
 
                     if data["ws"] is not None:
