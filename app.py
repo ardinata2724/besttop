@@ -24,6 +24,8 @@ from datetime import datetime
 # ==============================================================================
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
+JUMLAH_LABELS = ["jumlah_depan", "jumlah_tengah", "jumlah_belakang"]
+
 
 def _ensure_unique_top_n(top_list, n=6):
     """Memastikan daftar top-N memiliki item unik hingga N."""
@@ -80,10 +82,8 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
     for start_digit, following_digits in transitions.items():
         top_digits_counts = Counter(following_digits).most_common()
         
-        # Dapatkan daftar digit unik dari data, dengan urutan berdasarkan frekuensi
         final_digits = list(dict.fromkeys([d for d, c in top_digits_counts]))
         
-        # Jika daftar lebih pendek dari top_n, tambahkan digit acak yang belum ada
         if len(final_digits) < top_n:
             all_possible_digits = list(map(str, range(10)))
             random.shuffle(all_possible_digits)
@@ -95,7 +95,6 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
                 if digit not in current_digits_set:
                     final_digits.append(digit)
 
-        # Potong sesuai panjang yang diinginkan dan gabungkan menjadi string
         prediction_map[start_digit] = "".join(final_digits[:top_n])
         
     return prediction_map
@@ -105,7 +104,6 @@ def calculate_markov_ai(df, top_n=6, mode='belakang'):
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
-    # Petakan mode ke indeks digit yang sesuai
     mode_to_idx = {'depan': 3, 'tengah': 1, 'belakang': 0}
     if mode not in mode_to_idx:
         return f"Mode analisis tidak valid: {mode}"
@@ -116,13 +114,9 @@ def calculate_markov_ai(df, top_n=6, mode='belakang'):
     prediction_map = _get_ai_prediction_map(angka_str_list, start_digit_idx=start_idx, top_n=top_n)
     
     output_lines = []
-    # Ambil 30 data terakhir untuk ditampilkan
     for num_str in angka_str_list[-30:]:
-        # Dapatkan digit pemicu dari angka historis
         start_digit = num_str[start_idx]
-        # Dapatkan prediksi AI yang sesuai dari peta
         ai = prediction_map.get(start_digit, "")
-        # Format output
         output_lines.append(f"{num_str} = {ai} ai")
     
     return "\n".join(output_lines)
@@ -140,11 +134,11 @@ class PositionalEncoding(tf.keras.layers.Layer):
         return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
 
 def preprocess_data(df, window_size=7):
-    """Mempersiapkan data sekuensial untuk model AI, termasuk target multi-label untuk BBFS."""
+    """Mempersiapkan data sekuensial untuk model AI."""
     if len(df) < window_size + 1: return np.array([]), {}
     angka = df["angka"].values
     
-    labels_to_process = DIGIT_LABELS + ["jumlah"] + BBFS_LABELS
+    labels_to_process = DIGIT_LABELS + BBFS_LABELS + JUMLAH_LABELS
     sequences, targets = [], {label: [] for label in labels_to_process}
     
     for i in range(len(angka) - window_size):
@@ -153,14 +147,17 @@ def preprocess_data(df, window_size=7):
         sequences.append([int(d) for num in window[:-1] for d in num])
         target_digits = [int(d) for d in window[-1]]
         
-        # Target multi-class (satu jawaban benar)
         for j, label in enumerate(DIGIT_LABELS):
             targets[label].append(to_categorical(target_digits[j], num_classes=10))
         
-        jumlah_target = (target_digits[2] + target_digits[3]) % 10
-        targets["jumlah"].append(to_categorical(jumlah_target, num_classes=10))
-        
-        # Target multi-label (beberapa jawaban benar mungkin) untuk BBFS
+        jumlah_map = {
+            "jumlah_depan": (target_digits[0] + target_digits[1]) % 10,
+            "jumlah_tengah": (target_digits[1] + target_digits[2]) % 10,
+            "jumlah_belakang": (target_digits[2] + target_digits[3]) % 10,
+        }
+        for label, value in jumlah_map.items():
+            targets[label].append(to_categorical(value, num_classes=10))
+
         bbfs_map = {
             "bbfs_ribuan-ratusan": [target_digits[0], target_digits[1]],
             "bbfs_ratusan-puluhan": [target_digits[1], target_digits[2]],
@@ -198,7 +195,6 @@ def build_model(input_len, model_type="lstm", problem_type="multiclass"):
         loss = "categorical_crossentropy"
 
     model = Model(inputs, outputs)
-    # Kompilasi dipindahkan ke find_best_window_size untuk metrik dinamis
     return model, loss
 
 
@@ -243,7 +239,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
 
             model, loss_function = build_model(X.shape[1], model_type, problem_type)
             
-            metrics = ['accuracy'] # 'accuracy' di Keras berfungsi sbg BinaryAccuracy untuk binary_crossentropy
+            metrics = ['accuracy'] 
             if problem_type == 'multiclass':
                 metrics.append(TopKCategoricalAccuracy(k=top_n))
             
@@ -259,7 +255,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
 
             if problem_type == 'multilabel':
                 acc = eval_results[1]
-                top_n_acc = 0  # Tidak relevan untuk multi-label dengan cara ini
+                top_n_acc = 0
                 score = (acc * 0.7) + (avg_conf / 100 * 0.3)
                 top_n_acc_display = "N/A"
             else: # multiclass
@@ -330,13 +326,11 @@ st.title("Prediksi 4D - AI")
 try: from lokasi_list import lokasi_list
 except ImportError: lokasi_list = ["BULLSEYE", "HONGKONG", "SYDNEY", "SINGAPORE"]
 
-# Inisialisasi session state
 if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
 for label in DIGIT_LABELS:
     if f"win_{label}" not in st.session_state: st.session_state[f"win_{label}"] = 7
 if "angka_list" not in st.session_state: st.session_state.angka_list = []
 
-# --- SIDEBAR ---
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
@@ -360,7 +354,6 @@ with st.sidebar:
             key=f"win_{label}"
         )
 
-# --- KONTEN UTAMA ---
 col1, col2 = st.columns([1, 4])
 with col1:
     if st.button("🔄 Ambil Data dari API", use_container_width=True):
@@ -389,7 +382,6 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
         st.rerun()
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 
-# --- Definisi Tab ---
 tab_prediksi, tab_scan, tab_manajemen, tab_angka_main = st.tabs([
     "🔮 Prediksi & Hasil", 
     "🪟 Scan Window Size", 
@@ -397,7 +389,6 @@ tab_prediksi, tab_scan, tab_manajemen, tab_angka_main = st.tabs([
     "🎯 Angka Main"
 ])
 
-# --- TAB PREDIKSI ---
 with tab_prediksi:
     if st.button("🚀 Jalankan Prediksi", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
@@ -421,17 +412,16 @@ with tab_prediksi:
                 st.subheader(f"🔢 Semua Kombinasi 4D ({total_kombinasi} Line)")
 
                 if total_kombinasi > 5000:
-                    st.warning(f"Jumlah kombinasi ({total_kombinasi}) sangat besar. Menampilkan semua kombinasi mungkin akan membuat browser lambat.")
+                    st.warning(f"Jumlah kombinasi ({total_kombinasi}) sangat besar.")
                 
                 all_combinations = list(product(*result))
                 kombinasi_4d_list = ["".join(map(str, combo)) for combo in all_combinations]
                 output_string = " * ".join(kombinasi_4d_list)
                 st.text_area(f"Total {total_kombinasi} Kombinasi Penuh", output_string, height=300)
 
-# --- TAB MANAJEMEN MODEL ---
 with tab_manajemen:
     st.subheader("Manajemen Model AI")
-    st.info("Latih atau hapus model AI di sini. Jika Anda mengubah Window Size, latih ulang model untuk hasil terbaik.")
+    st.info("Latih atau hapus model AI di sini.")
     lokasi_id = selected_lokasi.lower().strip().replace(" ", "_")
     cols = st.columns(4)
     for i, label in enumerate(DIGIT_LABELS):
@@ -447,23 +437,22 @@ with tab_manajemen:
     if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
         if len(df) < max_ws + 10:
-            st.error(f"Data tidak cukup untuk melatih. Butuh setidaknya {max_ws + 10} baris.")
+            st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
         else:
             train_and_save_model(df, selected_lokasi, window_per_digit, model_type)
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
 
-# --- TAB SCAN WINDOW SIZE ---
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Kategori")
-    st.info("Klik tombol scan untuk setiap kategori. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual** untuk kategori yang relevan.")
+    st.info("Klik tombol scan untuk setiap kategori.")
     scan_cols = st.columns(2)
     
-    min_ws = scan_cols[0].number_input("Min WS", min_value=1, max_value=99, value=1)
-    max_ws = scan_cols[1].number_input("Max WS", min_value=1, max_value=100, value=25)
+    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 1)
+    max_ws = scan_cols[1].number_input("Max WS", 1, 100, 25)
 
     scan_ready = True
     if min_ws >= max_ws:
-        st.warning(f"Nilai 'Min WS' ({min_ws}) harus lebih kecil dari 'Max WS' ({max_ws}).")
+        st.warning(f"'Min WS' ({min_ws}) harus lebih kecil dari 'Max WS' ({max_ws}).")
         scan_ready = False
 
     if st.button("❌ Hapus Hasil Scan"):
@@ -471,28 +460,35 @@ with tab_scan:
         st.rerun()
     st.divider()
     
-    # Definisikan semua label yang bisa di-scan
-    SCAN_LABELS = DIGIT_LABELS + ["jumlah"] + BBFS_LABELS
+    SCAN_LABELS = DIGIT_LABELS + JUMLAH_LABELS + BBFS_LABELS
     
-    # Buat baris tombol untuk setiap kategori
-    st.markdown("**Kategori Digit & Jumlah**")
-    btn_cols_1 = st.columns(len(DIGIT_LABELS) + 1)
-    for i, label in enumerate(DIGIT_LABELS + ["jumlah"]):
+    st.markdown("**Kategori Digit**")
+    btn_cols_1 = st.columns(len(DIGIT_LABELS))
+    for i, label in enumerate(DIGIT_LABELS):
         if btn_cols_1[i].button(f"🔎 Scan {label.upper()}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
             if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
             else:
-                st.toast(f"🔎 Memindai {label.upper()}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
+                st.toast(f"Memindai {label.upper()}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
 
-    st.markdown("**Kategori BBFS**")
-    btn_cols_2 = st.columns(len(BBFS_LABELS))
-    for i, label in enumerate(BBFS_LABELS):
-        if btn_cols_2[i].button(f"🔎 Scan {label.replace('_', ' ').upper()}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
+    st.markdown("**Kategori Jumlah**")
+    btn_cols_2 = st.columns(len(JUMLAH_LABELS))
+    for i, label in enumerate(JUMLAH_LABELS):
+        display_label = label.replace('_', ' ').upper()
+        if btn_cols_2[i].button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
             if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
             else:
-                st.toast(f"🔎 Memindai {label.upper()}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
+                st.toast(f"Memindai {display_label}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
+
+    st.markdown("**Kategori BBFS**")
+    btn_cols_3 = st.columns(len(BBFS_LABELS))
+    for i, label in enumerate(BBFS_LABELS):
+        display_label = label.replace('_', ' ').upper()
+        if btn_cols_3[i].button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
+            if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
+            else:
+                st.toast(f"Memindai {display_label}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
     st.divider()
     
-    # Tampilkan hasil untuk semua label yang dipindai
     for label in [l for l in SCAN_LABELS if l in st.session_state.scan_outputs]:
         data = st.session_state.scan_outputs[label]
         expander_title = f"Hasil Scan untuk {label.replace('_', ' ').upper()}"
@@ -519,18 +515,17 @@ with tab_scan:
                         )
 
                     if data["ws"] is not None:
-                        st.success(f"✅ WS terbaik yang disarankan: {data['ws']}")
+                        st.success(f"✅ WS terbaik: {data['ws']}")
                     else:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
-                    st.warning("Tidak ada hasil yang ditemukan untuk rentang WS yang diberikan.")
+                    st.warning("Tidak ada hasil untuk rentang WS ini.")
 
-# --- TAB ANGKA MAIN ---
 with tab_angka_main:
     st.subheader("Analisis Angka Main dari Data Historis")
     
     if len(df) < 10:
-        st.warning("Data historis tidak cukup untuk melakukan analisis (minimal 10 baris).")
+        st.warning("Data historis tidak cukup (minimal 10 baris).")
     else:
         col1, col2 = st.columns([2, 1]) 
         with col1:
@@ -540,33 +535,24 @@ with tab_angka_main:
                 with st.spinner("Menganalisis AI Depan..."):
                     result_depan = calculate_markov_ai(df, top_n=jumlah_digit, mode='depan')
                 st.text_area(
-                    "Hasil Analisis (Depan)",
-                    result_depan,
-                    height=300,
-                    label_visibility="collapsed",
-                    key="ai_depan"
+                    "Hasil Analisis (Depan)", result_depan, height=300,
+                    label_visibility="collapsed", key="ai_depan"
                 )
 
             with st.expander("Analisis AI Tengah (berdasarkan digit AS/Ratusan)"):
                 with st.spinner("Menganalisis AI Tengah..."):
                     result_tengah = calculate_markov_ai(df, top_n=jumlah_digit, mode='tengah')
                 st.text_area(
-                    "Hasil Analisis (Tengah)",
-                    result_tengah,
-                    height=300,
-                    label_visibility="collapsed",
-                    key="ai_tengah"
+                    "Hasil Analisis (Tengah)", result_tengah, height=300,
+                    label_visibility="collapsed", key="ai_tengah"
                 )
             
             with st.expander("Analisis AI Belakang (berdasarkan digit KOP/Ribuan)"):
                 with st.spinner("Menganalisis AI Belakang..."):
                     result_belakang = calculate_markov_ai(df, top_n=jumlah_digit, mode='belakang')
                 st.text_area(
-                    "Hasil Analisis (Belakang)",
-                    result_belakang,
-                    height=300,
-                    label_visibility="collapsed",
-                    key="ai_belakang"
+                    "Hasil Analisis (Belakang)", result_belakang, height=300,
+                    label_visibility="collapsed", key="ai_belakang"
                 )
 
         with col2:
@@ -580,4 +566,4 @@ with tab_angka_main:
             st.markdown(f"**Colok Bebas:**")
             st.code(stats['colok_bebas'])
 
-    st.info("Angka di atas adalah hasil analisis statistik dari data historis yang tersedia dan bukan merupakan jaminan hasil.")
+    st.info("Angka di atas adalah hasil analisis statistik dari data historis dan bukan jaminan hasil.")
