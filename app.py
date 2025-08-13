@@ -72,7 +72,6 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
     transitions = defaultdict(list)
     for num_str in angka_list:
         start_digit = num_str[start_digit_idx]
-        # Mengambil semua digit lain kecuali start_digit
         following_digits = [d for i, d in enumerate(num_str) if i != start_digit_idx]
         transitions[start_digit].extend(following_digits)
 
@@ -84,29 +83,19 @@ def _get_ai_prediction_map(angka_list, start_digit_idx, top_n):
     return prediction_map
 
 def calculate_markov_ai_belakang(df, top_n=6):
-    """
-    Menghitung 4 AI berbeda berdasarkan setiap posisi digit (KOP, AS, KEPALA, EKOR).
-    Direfactor untuk mengurangi duplikasi kode.
-    """
+    """Menghitung 4 AI berbeda berdasarkan setiap posisi digit (KOP, AS, KEPALA, EKOR)."""
     if df.empty or len(df) < 10:
         return "Data tidak cukup untuk analisis."
 
     angka_str_list = df["angka"].astype(str).str.zfill(4).tolist()
-    
-    # Membuat peta prediksi untuk setiap posisi (0=KOP, 1=AS, 2=KEPALA, 3=EKOR)
-    prediction_maps = [
-        _get_ai_prediction_map(angka_str_list, i, top_n) for i in range(4)
-    ]
+    prediction_maps = [_get_ai_prediction_map(angka_str_list, i, top_n) for i in range(4)]
     
     output_lines = []
-    # Menampilkan 30 data historis terakhir
     for num_str in angka_str_list[-30:]:
-        # Mendapatkan AI dari setiap peta berdasarkan digit pada posisi yang sesuai
         ais = [pred_map.get(num_str[i], "") for i, pred_map in enumerate(prediction_maps)]
         output_lines.append(f"{num_str} = {' vs '.join(ais)} ai")
     
     return "\n".join(output_lines)
-
 
 class PositionalEncoding(tf.keras.layers.Layer):
     """Layer untuk menambahkan positional encoding pada model Transformer."""
@@ -179,7 +168,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n):
     best_ws, best_score = None, -1
     table_data = []
     progress_bar = st.progress(0.0, text=f"Memulai scan untuk {label.upper()}...")
-    total_steps = max_ws - min_ws + 1
+    total_steps = max(1, max_ws - min_ws + 1)
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
         progress_bar.progress((i + 1) / total_steps, text=f"Mencoba WS={ws} untuk {label.upper()}...")
         try:
@@ -289,7 +278,6 @@ with col1:
         try:
             with st.spinner("🔄 Mengambil data..."):
                 url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
-                # [DIKEMBALIKAN] Kunci API ditanamkan langsung untuk fungsionalitas otomatis
                 headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
                 response = requests.get(url, headers=headers, timeout=10)
                 response.raise_for_status()
@@ -340,7 +328,6 @@ with tab_prediksi:
                     st.markdown(f"**{label.upper()}:** {', '.join(map(str, result[i]))}")
                 
                 st.divider()
-                # Kalkulasi jumlah kombinasi yang efisien
                 total_kombinasi = np.prod([len(r) for r in result])
                 st.subheader(f"🔢 Semua Kombinasi 4D ({total_kombinasi} Line)")
 
@@ -381,11 +368,16 @@ with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Digit")
     st.info("Klik tombol scan untuk setiap digit. Setelah menemukan WS terbaik, **atur slider di sidebar secara manual**.")
     scan_cols = st.columns(2)
-    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 3)
     
-    # Nilai default untuk Max WS kini dihitung agar selalu lebih besar dari Min WS.
-    default_max_ws = min_ws + 22
-    max_ws = scan_cols[1].number_input("Max WS", min_value=min_ws + 1, max_value=100, value=default_max_ws)
+    # [FIX] Mengubah logika agar nilai input tidak di-reset.
+    # Menggunakan nilai default statis yang tidak bergantung satu sama lain.
+    min_ws = scan_cols[0].number_input("Min WS", min_value=1, max_value=99, value=1)
+    max_ws = scan_cols[1].number_input("Max WS", min_value=1, max_value=100, value=25)
+
+    scan_ready = True
+    if min_ws >= max_ws:
+        st.warning(f"Nilai 'Min WS' ({min_ws}) harus lebih kecil dari 'Max WS' ({max_ws}).")
+        scan_ready = False
 
     if st.button("❌ Hapus Hasil Scan"):
         st.session_state.scan_outputs = {}
@@ -394,7 +386,8 @@ with tab_scan:
 
     btn_cols = st.columns(4)
     for i, label in enumerate(DIGIT_LABELS):
-        if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True):
+        # Tombol scan hanya bisa ditekan jika rentang WS valid
+        if btn_cols[i].button(f"🔎 Scan {label.upper()}", use_container_width=True, disabled=not scan_ready):
             if len(df) < max_ws + 10:
                 st.error(f"Data tidak cukup untuk scan. Butuh setidaknya {max_ws + 10} baris.")
             else:
