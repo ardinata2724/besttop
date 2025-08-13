@@ -408,11 +408,12 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
         st.rerun()
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 
-tab_prediksi, tab_scan, tab_manajemen, tab_angka_main = st.tabs([
-    "🔮 Prediksi & Hasil", 
-    "🪟 Scan Window Size", 
+# --- Definisi Tab ---
+tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs([
+    "🪟 Scan Window Size",
     "⚙️ Manajemen Model",
-    "🎯 Angka Main"
+    "🎯 Angka Main",
+    "🔮 Prediksi & Hasil"
 ])
 
 with tab_prediksi:
