@@ -345,8 +345,9 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
 # ==============================================================================
 # BAGIAN 2: APLIKASI STREAMLIT UTAMA
 # ==============================================================================
-st.set_page_config(page_title="Prediksi AI", layout="wide")
-st.title("Prediksi 4D - AI")
+st.set_page_config(page_title="Prediksi 4D", layout="wide")
+st.title("Prediksi 4D")
+st.markdown("*{tidak ada jaminan yang penting berusaha agar dapat jackpot}*")
 st.caption("editing by: Andi Prediction")
 
 try: from lokasi_list import lokasi_list
