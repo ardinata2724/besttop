@@ -177,7 +177,6 @@ def preprocess_data(df, window_size=7):
             "shio_belakang": target_digits[2] * 10 + target_digits[3],
         }
         for label, two_digit_num in shio_num_map.items():
-            # Menggunakan rumus standar: (angka - 1) % 12 untuk mendapatkan indeks 0-11
             shio_index = (two_digit_num - 1) % 12 if two_digit_num > 0 else 11
             targets[label].append(to_categorical(shio_index, num_classes=12))
 
@@ -202,7 +201,7 @@ def build_model(input_len, model_type="lstm", problem_type="multiclass", num_cla
     if problem_type == "multilabel":
         outputs = Dense(num_classes, activation='sigmoid')(x)
         loss = "binary_crossentropy"
-    else: # multiclass (termasuk 'digit', 'jumlah', dan 'shio')
+    else: 
         outputs = Dense(num_classes, activation='softmax')(x)
         loss = "categorical_crossentropy"
 
@@ -274,7 +273,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             top_indices = np.argsort(last_pred)[::-1][:k_val]
 
             if problem_type == "shio":
-                # Konversi indeks (0-11) ke Shio (1-12)
                 top_n_pred_str = ", ".join(map(str, top_indices + 1))
             else:
                 top_n_pred_str = ", ".join(map(str, top_indices))
@@ -284,7 +282,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 acc = eval_results[1]
                 score = (acc * 0.7) + (avg_conf / 100 * 0.3)
                 top_n_acc_display = "N/A"
-            else: # multiclass dan shio
+            else: 
                 acc = eval_results[1]
                 top_n_acc = eval_results[2]
                 score = (acc * 0.2) + (top_n_acc * 0.5) + (avg_conf / 100 * 0.3)
@@ -490,7 +488,6 @@ with tab_scan:
     
     SCAN_LABELS = DIGIT_LABELS + JUMLAH_LABELS + BBFS_LABELS + SHIO_LABELS
     
-    # --- Tombol Scan ---
     def display_scan_button(label, columns):
         display_label = label.replace('_', ' ').upper()
         if columns.button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
@@ -516,7 +513,6 @@ with tab_scan:
     
     st.divider()
 
-    # --- Tampilan Hasil Scan ---
     for label in [l for l in SCAN_LABELS if l in st.session_state.scan_outputs]:
         data = st.session_state.scan_outputs[label]
         expander_title = f"Hasil Scan untuk {label.replace('_', ' ').upper()}"
@@ -532,11 +528,11 @@ with tab_scan:
                     st.dataframe(result_df)
                     st.markdown("---")
                     
-                    # Ambil nama kolom Top-N dari dataframe
-                    top_n_column_name = next((col for col in result_df.columns if "Top-" in col), None)
-                    if top_n_column_name:
-                        st.markdown(f"👇 **Salin Hasil dari Kolom {top_n_column_name}**")
-                        copyable_text = "\n".join(result_df[top_n_column_name].astype(str))
+                    prediction_column_name = next((col for col in result_df.columns if col.startswith("Top-") and "Acc" not in col), None)
+
+                    if prediction_column_name:
+                        st.markdown(f"👇 **Salin Hasil dari Kolom {prediction_column_name}**")
+                        copyable_text = "\n".join(result_df[prediction_column_name].astype(str))
                         st.text_area(
                             f"Klik untuk menyalin",
                             value=copyable_text,
