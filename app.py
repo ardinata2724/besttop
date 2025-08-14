@@ -26,6 +26,7 @@ DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
 JUMLAH_LABELS = ["jumlah_depan", "jumlah_tengah", "jumlah_belakang"]
 SHIO_LABELS = ["shio_depan", "shio_tengah", "shio_belakang"]
+JALUR_LABELS = ["jalur_ribuan-ratusan", "jalur_ratusan-puluhan", "jalur_puluhan-satuan"]
 
 
 def _ensure_unique_top_n(top_list, n=6):
@@ -183,6 +184,36 @@ def preprocess_data(df, window_size=7):
     final_targets = {label: np.array(v) for label, v in targets.items() if v}
     return np.array(sequences), final_targets
 
+def preprocess_data_for_jalur(df, window_size, jalur_main_selection, target_position):
+    """Mempersiapkan data sekuensial khusus untuk analisis Jalur Main (binary)."""
+    if len(df) < window_size + 1 or jalur_main_selection not in [1, 2, 3]:
+        return np.array([]), np.array([])
+
+    jalur_map = {1: [1, 4, 7, 10], 2: [2, 5, 8, 11], 3: [3, 6, 9, 12]}
+    shios_in_jalur = jalur_map[jalur_main_selection]
+    
+    position_map = {
+        'ribuan-ratusan': (0, 1), 'ratusan-puluhan': (1, 2), 'puluhan-satuan': (2, 3)
+    }
+    idx1, idx2 = position_map[target_position]
+
+    angka = df["angka"].values
+    sequences, targets = [], []
+
+    for i in range(len(angka) - window_size):
+        window = [str(x).zfill(4) for x in angka[i:i+window_size+1]]
+        if any(not x.isdigit() for x in window): continue
+        
+        sequences.append([int(d) for num in window[:-1] for d in num])
+        target_digits = [int(d) for d in window[-1]]
+        two_digit_num = target_digits[idx1] * 10 + target_digits[idx2]
+        shio_value = (two_digit_num - 1) % 12 + 1 if two_digit_num > 0 else 12
+        
+        target_label = 1 if shio_value in shios_in_jalur else 0
+        targets.append(to_categorical(target_label, num_classes=2))
+
+    return np.array(sequences), np.array(targets)
+
 def build_model(input_len, model_type="lstm", problem_type="multiclass", num_classes=10):
     """Membangun arsitektur model AI, mendukung jumlah kelas yang dinamis."""
     inputs = Input(shape=(input_len,))
@@ -230,65 +261,88 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
             st.error(f"Error memuat model untuk {label}: {e}"); return None, None
     return results, probs
 
-def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
-    """Mencari window size terbaik, mendukung semua jenis kategori."""
+def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio, jalur_main_selection=None):
+    """Mencari window size terbaik, mendukung semua jenis kategori termasuk Jalur Main."""
     best_ws, best_score = None, -1
     table_data = []
     
-    if label in BBFS_LABELS:
+    is_jalur_scan = label in JALUR_LABELS
+    
+    if is_jalur_scan:
+        problem_type = "binary"
+        k_val = 2 # Not really top-k, just 2 classes
+        num_classes = 2
+        table_cols = ["Window Size", "Acc (%)", "Conf In Jalur (%)", "Prediksi"]
+    elif label in BBFS_LABELS:
         problem_type = "multilabel"
+        k_val = top_n
+        num_classes = 10
+        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", "Conf (%)", f"Top-{k_val}"]
     elif label in SHIO_LABELS:
         problem_type = "shio"
+        k_val = top_n_shio
+        num_classes = 12
+        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", "Conf (%)", f"Top-{k_val}"]
     else:
         problem_type = "multiclass"
+        k_val = top_n
+        num_classes = 10
+        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", "Conf (%)", f"Top-{k_val}"]
 
-    k_val = top_n_shio if problem_type == "shio" else top_n
-    num_classes = 12 if problem_type == "shio" else 10
-    
     progress_bar = st.progress(0.0, text=f"Memulai scan untuk {label.upper()}...")
     total_steps = max(1, max_ws - min_ws + 1)
     
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
         progress_bar.progress((i + 1) / total_steps, text=f"Mencoba WS={ws} untuk {label.upper()}...")
         try:
-            X, y_dict = preprocess_data(df, window_size=ws)
-            if label not in y_dict or y_dict[label].shape[0] < 10: continue
-            y = y_dict[label]
-            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+            if is_jalur_scan:
+                position_label = label.split('_')[1]
+                X, y = preprocess_data_for_jalur(df, ws, jalur_main_selection, position_label)
+                if X.shape[0] < 10: continue
+            else:
+                X, y_dict = preprocess_data(df, window_size=ws)
+                if label not in y_dict or y_dict[label].shape[0] < 10: continue
+                y = y_dict[label]
 
-            model, loss_function = build_model(X.shape[1], model_type, problem_type, num_classes)
+            X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
             
-            metrics = ['accuracy'] 
-            if problem_type != 'multilabel':
+            model, loss_function = build_model(X.shape[1], model_type, problem_type, num_classes)
+            metrics = ['accuracy']
+            if problem_type not in ['multilabel', 'binary']:
                 metrics.append(TopKCategoricalAccuracy(k=k_val))
             
             model.compile(optimizer="adam", loss=loss_function, metrics=metrics)
-            
             model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
             
             eval_results = model.evaluate(X_val, y_val, verbose=0)
             preds = model.predict(X_val, verbose=0)
-            avg_conf = np.mean(np.sort(preds, axis=1)[:, -k_val:]) * 100
-            last_pred = model.predict(X[-1:], verbose=0)[0]
-            top_indices = np.argsort(last_pred)[::-1][:k_val]
-
-            if problem_type == "shio":
-                top_n_pred_str = ", ".join(map(str, top_indices + 1))
+            
+            if is_jalur_scan:
+                acc = eval_results[1]
+                last_pred = model.predict(X[-1:], verbose=0)[0]
+                conf_in_jalur = last_pred[1] * 100
+                pred_str = f"{conf_in_jalur:.2f}%"
+                score = acc
+                table_data.append((ws, f"{acc*100:.2f}", f"{conf_in_jalur:.2f}", pred_str))
             else:
-                top_n_pred_str = ", ".join(map(str, top_indices))
+                avg_conf = np.mean(np.sort(preds, axis=1)[:, -k_val:]) * 100
+                last_pred = model.predict(X[-1:], verbose=0)[0]
+                top_indices = np.argsort(last_pred)[::-1][:k_val]
 
+                if problem_type == "shio": top_n_pred_str = ", ".join(map(str, top_indices + 1))
+                else: top_n_pred_str = ", ".join(map(str, top_indices))
 
-            if problem_type == 'multilabel':
-                acc = eval_results[1]
-                score = (acc * 0.7) + (avg_conf / 100 * 0.3)
-                top_n_acc_display = "N/A"
-            else: 
-                acc = eval_results[1]
-                top_n_acc = eval_results[2]
-                score = (acc * 0.2) + (top_n_acc * 0.5) + (avg_conf / 100 * 0.3)
-                top_n_acc_display = f"{top_n_acc*100:.2f}"
-
-            table_data.append((ws, f"{acc*100:.2f}", top_n_acc_display, f"{avg_conf:.2f}", top_n_pred_str))
+                if problem_type == 'multilabel':
+                    acc = eval_results[1]
+                    score = (acc * 0.7) + (avg_conf / 100 * 0.3)
+                    top_n_acc_display = "N/A"
+                else: 
+                    acc = eval_results[1]
+                    top_n_acc = eval_results[2]
+                    score = (acc * 0.2) + (top_n_acc * 0.5) + (avg_conf / 100 * 0.3)
+                    top_n_acc_display = f"{top_n_acc*100:.2f}"
+                table_data.append((ws, f"{acc*100:.2f}", top_n_acc_display, f"{avg_conf:.2f}", top_n_pred_str))
+            
             if score > best_score:
                 best_score, best_ws = score, ws
         except Exception as e:
@@ -297,7 +351,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             
     progress_bar.empty()
     if not table_data: return None, None
-    return best_ws, pd.DataFrame(table_data, columns=["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", "Conf (%)", f"Top-{k_val}"])
+    return best_ws, pd.DataFrame(table_data, columns=table_cols)
 
 
 def train_and_save_model(df, lokasi, window_dict, model_type):
@@ -490,7 +544,7 @@ with tab_scan:
         st.rerun()
     st.divider()
     
-    SCAN_LABELS = DIGIT_LABELS + JUMLAH_LABELS + BBFS_LABELS + SHIO_LABELS
+    SCAN_LABELS = DIGIT_LABELS + JUMLAH_LABELS + BBFS_LABELS + SHIO_LABELS + JALUR_LABELS
     
     def display_scan_button(label, columns):
         display_label = label.replace('_', ' ').upper()
@@ -514,6 +568,10 @@ with tab_scan:
     st.markdown("**Kategori Shio**")
     for i, label in enumerate(SHIO_LABELS):
         display_scan_button(label, st.columns(len(SHIO_LABELS))[i])
+
+    st.markdown("**Kategori Jalur Main**")
+    for i, label in enumerate(JALUR_LABELS):
+        display_scan_button(label, st.columns(len(JALUR_LABELS))[i])
     
     st.divider()
 
@@ -522,7 +580,15 @@ with tab_scan:
         expander_title = f"Hasil Scan untuk {label.replace('_', ' ').upper()}"
         with st.expander(expander_title, expanded=True):
             if data == "PENDING":
-                best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, top_n=jumlah_digit, top_n_shio=jumlah_digit_shio)
+                params = {
+                    "df": df, "label": label, "model_type": model_type,
+                    "min_ws": min_ws, "max_ws": max_ws, "top_n": jumlah_digit,
+                    "top_n_shio": jumlah_digit_shio
+                }
+                if label in JALUR_LABELS:
+                    params["jalur_main_selection"] = jalur_main
+                
+                best_ws, result_table = find_best_window_size(**params)
                 st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
                 st.rerun()
             
@@ -532,7 +598,7 @@ with tab_scan:
                     st.dataframe(result_df)
                     st.markdown("---")
                     
-                    prediction_column_name = next((col for col in result_df.columns if col.startswith("Top-") and "Acc" not in col), None)
+                    prediction_column_name = next((col for col in result_df.columns if col.startswith("Top-") or col.startswith("Prediksi")), None)
 
                     if prediction_column_name:
                         st.markdown(f"👇 **Salin Hasil dari Kolom {prediction_column_name}**")
