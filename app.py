@@ -171,7 +171,6 @@ def preprocess_data(df, window_size=7):
                 multi_hot_target[digit] = 1.0
             targets[label].append(multi_hot_target)
 
-        # Logika untuk Shio (1-12)
         shio_num_map = {
             "shio_depan": target_digits[0] * 10 + target_digits[1],
             "shio_tengah": target_digits[1] * 10 + target_digits[2],
@@ -184,13 +183,13 @@ def preprocess_data(df, window_size=7):
     final_targets = {label: np.array(v) for label, v in targets.items() if v}
     return np.array(sequences), final_targets
 
-def preprocess_data_for_jalur(df, window_size, jalur_main_selection, target_position):
-    """Mempersiapkan data sekuensial khusus untuk analisis Jalur Main (binary)."""
-    if len(df) < window_size + 1 or jalur_main_selection not in [1, 2, 3]:
+def preprocess_data_for_jalur_multiclass(df, window_size, target_position):
+    """Mempersiapkan data untuk analisis Jalur Main sebagai masalah multi-kelas (1, 2, atau 3)."""
+    if len(df) < window_size + 1:
         return np.array([]), np.array([])
 
     jalur_map = {1: [1, 4, 7, 10], 2: [2, 5, 8, 11], 3: [3, 6, 9, 12]}
-    shios_in_jalur = jalur_map[jalur_main_selection]
+    shio_to_jalur = {shio: jalur for jalur, shios in jalur_map.items() for shio in shios}
     
     position_map = {
         'ribuan-ratusan': (0, 1), 'ratusan-puluhan': (1, 2), 'puluhan-satuan': (2, 3)
@@ -209,8 +208,9 @@ def preprocess_data_for_jalur(df, window_size, jalur_main_selection, target_posi
         two_digit_num = target_digits[idx1] * 10 + target_digits[idx2]
         shio_value = (two_digit_num - 1) % 12 + 1 if two_digit_num > 0 else 12
         
-        target_label = 1 if shio_value in shios_in_jalur else 0
-        targets.append(to_categorical(target_label, num_classes=2))
+        target_jalur = shio_to_jalur[shio_value]
+        target_label_index = target_jalur - 1
+        targets.append(to_categorical(target_label_index, num_classes=3))
 
     return np.array(sequences), np.array(targets)
 
@@ -269,10 +269,10 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     is_jalur_scan = label in JALUR_LABELS
     
     if is_jalur_scan:
-        problem_type = "binary"
-        k_val = 2 # Not really top-k, just 2 classes
-        num_classes = 2
-        table_cols = ["Window Size", "Acc (%)", "Conf In Jalur (%)", "Prediksi"]
+        problem_type = "jalur_multiclass"
+        k_val = 2
+        num_classes = 3
+        table_cols = ["Window Size", "Acc (%)", "Top-2 Acc (%)", "Prediksi"]
     elif label in BBFS_LABELS:
         problem_type = "multilabel"
         k_val = top_n
@@ -297,7 +297,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         try:
             if is_jalur_scan:
                 position_label = label.split('_')[1]
-                X, y = preprocess_data_for_jalur(df, ws, jalur_main_selection, position_label)
+                X, y = preprocess_data_for_jalur_multiclass(df, ws, position_label)
                 if X.shape[0] < 10: continue
             else:
                 X, y_dict = preprocess_data(df, window_size=ws)
@@ -306,25 +306,29 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
 
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
             
-            model, loss_function = build_model(X.shape[1], model_type, problem_type, num_classes)
+            # Untuk jalur, selalu gunakan 'multiclass' karena outputnya (Jalur 1, 2, atau 3)
+            build_problem_type = 'multiclass' if is_jalur_scan else problem_type
+            model, loss_function = build_model(X.shape[1], model_type, build_problem_type, num_classes)
+            
             metrics = ['accuracy']
-            if problem_type not in ['multilabel', 'binary']:
+            if problem_type not in ['multilabel']:
                 metrics.append(TopKCategoricalAccuracy(k=k_val))
             
             model.compile(optimizer="adam", loss=loss_function, metrics=metrics)
             model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
             
             eval_results = model.evaluate(X_val, y_val, verbose=0)
-            preds = model.predict(X_val, verbose=0)
             
             if is_jalur_scan:
                 acc = eval_results[1]
+                top_2_acc = eval_results[2]
                 last_pred = model.predict(X[-1:], verbose=0)[0]
-                conf_in_jalur = last_pred[1] * 100
-                pred_str = f"{conf_in_jalur:.2f}%"
-                score = acc
-                table_data.append((ws, f"{acc*100:.2f}", f"{conf_in_jalur:.2f}", pred_str))
+                top_indices = np.argsort(last_pred)[::-1][:2]
+                pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
+                score = (acc * 0.3) + (top_2_acc * 0.7)
+                table_data.append((ws, f"{acc*100:.2f}", f"{top_2_acc*100:.2f}", pred_str))
             else:
+                preds = model.predict(X_val, verbose=0)
                 avg_conf = np.mean(np.sort(preds, axis=1)[:, -k_val:]) * 100
                 last_pred = model.predict(X[-1:], verbose=0)[0]
                 top_indices = np.argsort(last_pred)[::-1][:k_val]
@@ -421,7 +425,7 @@ with st.sidebar:
     st.markdown("### 🎯 Opsi Prediksi")
     jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 6)
     jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
-    jalur_main = st.selectbox("🛤️ Jalur Main", [1, 2, 3])
+    jalur_main = st.selectbox("🛤️ Jalur Main", [1, 2, 3], help="Pilihan ini tidak memengaruhi 'Scan Jalur Main'.")
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
     use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
     model_type = "transformer" if use_transformer else "lstm"
@@ -583,10 +587,8 @@ with tab_scan:
                 params = {
                     "df": df, "label": label, "model_type": model_type,
                     "min_ws": min_ws, "max_ws": max_ws, "top_n": jumlah_digit,
-                    "top_n_shio": jumlah_digit_shio
+                    "top_n_shio": jumlah_digit_shio, "jalur_main_selection": jalur_main
                 }
-                if label in JALUR_LABELS:
-                    params["jalur_main_selection"] = jalur_main
                 
                 best_ws, result_table = find_best_window_size(**params)
                 st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
