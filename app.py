@@ -28,6 +28,13 @@ JUMLAH_LABELS = ["jumlah_depan", "jumlah_tengah", "jumlah_belakang"]
 SHIO_LABELS = ["shio_depan", "shio_tengah", "shio_belakang"]
 JALUR_LABELS = ["jalur_ribuan-ratusan", "jalur_ratusan-puluhan", "jalur_puluhan-satuan"]
 
+# Menambahkan peta angka untuk setiap jalur
+JALUR_ANGKA_MAP = {
+    1: "01*13*25*37*49*61*73*85*97*04*16*28*40*52*64*76*88*00*07*19*31*43*55*67*79*91*10*22*34*46*58*70*82*94",
+    2: "02*14*26*38*50*62*74*86*98*05*17*29*41*53*65*77*89*08*20*32*44*56*68*80*92*11*23*35*47*59*71*83*95",
+    3: "03*15*27*39*51*63*75*87*99*06*18*30*42*54*66*78*90*09*21*33*45*57*69*81*93*12*24*36*48*60*72*84*96"
+}
+
 
 def _ensure_unique_top_n(top_list, n=6):
     """Memastikan daftar top-N memiliki item unik hingga N."""
@@ -261,7 +268,7 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
             st.error(f"Error memuat model untuk {label}: {e}"); return None, None
     return results, probs
 
-def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio, jalur_main_selection=None):
+def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
     """Mencari window size terbaik, mendukung semua jenis kategori termasuk Jalur Main."""
     best_ws, best_score = None, -1
     table_data = []
@@ -272,7 +279,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         problem_type = "jalur_multiclass"
         k_val = 2
         num_classes = 3
-        table_cols = ["Window Size", "Acc (%)", "Top-2 Acc (%)", "Prediksi"]
+        table_cols = ["Window Size", "Acc (%)", "Top-2 Acc (%)", "Prediksi", "Angka Jalur"]
     elif label in BBFS_LABELS:
         problem_type = "multilabel"
         k_val = top_n
@@ -306,7 +313,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
 
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
             
-            # Untuk jalur, selalu gunakan 'multiclass' karena outputnya (Jalur 1, 2, atau 3)
             build_problem_type = 'multiclass' if is_jalur_scan else problem_type
             model, loss_function = build_model(X.shape[1], model_type, build_problem_type, num_classes)
             
@@ -325,8 +331,16 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 last_pred = model.predict(X[-1:], verbose=0)[0]
                 top_indices = np.argsort(last_pred)[::-1][:2]
                 pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
+
+                top_jalur_num = top_indices[0] + 1
+                second_jalur_num = top_indices[1] + 1
+                angka_jalur_str = (
+                    f"Jalur {top_jalur_num} => {JALUR_ANGKA_MAP[top_jalur_num]}\n\n"
+                    f"Jalur {second_jalur_num} => {JALUR_ANGKA_MAP[second_jalur_num]}"
+                )
+
                 score = (acc * 0.3) + (top_2_acc * 0.7)
-                table_data.append((ws, f"{acc*100:.2f}", f"{top_2_acc*100:.2f}", pred_str))
+                table_data.append((ws, f"{acc*100:.2f}", f"{top_2_acc*100:.2f}", pred_str, angka_jalur_str))
             else:
                 preds = model.predict(X_val, verbose=0)
                 avg_conf = np.mean(np.sort(preds, axis=1)[:, -k_val:]) * 100
@@ -425,7 +439,6 @@ with st.sidebar:
     st.markdown("### 🎯 Opsi Prediksi")
     jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 6)
     jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
-    jalur_main = st.selectbox("🛤️ Jalur Main", [1, 2, 3], help="Pilihan ini tidak memengaruhi 'Scan Jalur Main'.")
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
     use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
     model_type = "transformer" if use_transformer else "lstm"
@@ -587,7 +600,7 @@ with tab_scan:
                 params = {
                     "df": df, "label": label, "model_type": model_type,
                     "min_ws": min_ws, "max_ws": max_ws, "top_n": jumlah_digit,
-                    "top_n_shio": jumlah_digit_shio, "jalur_main_selection": jalur_main
+                    "top_n_shio": jumlah_digit_shio
                 }
                 
                 best_ws, result_table = find_best_window_size(**params)
@@ -600,11 +613,18 @@ with tab_scan:
                     st.dataframe(result_df)
                     st.markdown("---")
                     
-                    prediction_column_name = next((col for col in result_df.columns if col.startswith("Top-") or col.startswith("Prediksi")), None)
+                    # Logika untuk menyalin hasil prediksi yang relevan
+                    copyable_text = ""
+                    if label in JALUR_LABELS and "Angka Jalur" in result_df.columns:
+                        st.markdown(f"👇 **Salin Hasil dari Kolom Angka Jalur**")
+                        copyable_text = "\n".join(result_df["Angka Jalur"].astype(str))
+                    else:
+                        prediction_column_name = next((col for col in result_df.columns if col.startswith("Top-") or col.startswith("Prediksi")), None)
+                        if prediction_column_name:
+                            st.markdown(f"👇 **Salin Hasil dari Kolom {prediction_column_name}**")
+                            copyable_text = "\n".join(result_df[prediction_column_name].astype(str))
 
-                    if prediction_column_name:
-                        st.markdown(f"👇 **Salin Hasil dari Kolom {prediction_column_name}**")
-                        copyable_text = "\n".join(result_df[prediction_column_name].astype(str))
+                    if copyable_text:
                         st.text_area(
                             f"Klik untuk menyalin",
                             value=copyable_text,
