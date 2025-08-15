@@ -621,7 +621,6 @@ with tab_scan:
                     else:
                         prediction_column_name = next((col for col in result_df.columns if col.startswith("Top-") or col.startswith("Prediksi")), None)
                         if prediction_column_name:
-                            st.markdown(f"👇 **Salin Hasil dari Kolom {prediction_column_name}**")
                             copyable_text = "\n".join(result_df[prediction_column_name].astype(str))
 
                     if copyable_text:
