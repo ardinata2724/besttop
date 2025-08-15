@@ -608,7 +608,7 @@ with tab_scan:
             elif isinstance(data, dict):
                 result_df = data.get("table")
                 if result_df is not None and not result_df.empty:
-                    st.dataframe(result_df)
+                    st.dataframe(result_df.style.set_properties(**{'text-align': 'center'}))
                     st.markdown("---")
                     
                     if data["ws"] is not None:
