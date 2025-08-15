@@ -284,17 +284,17 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         problem_type = "multilabel"
         k_val = top_n
         num_classes = 10
-        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", "Conf (%)", f"Top-{k_val}"]
+        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", f"Top-{k_val}"]
     elif label in SHIO_LABELS:
         problem_type = "shio"
         k_val = top_n_shio
         num_classes = 12
-        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", "Conf (%)", f"Top-{k_val}"]
+        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", f"Top-{k_val}"]
     else:
         problem_type = "multiclass"
         k_val = top_n
         num_classes = 10
-        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", "Conf (%)", f"Top-{k_val}"]
+        table_cols = ["Window Size", "Acc (%)", f"Top-{k_val} Acc (%)", f"Top-{k_val}"]
 
     progress_bar = st.progress(0.0, text=f"Memulai scan untuk {label.upper()}...")
     total_steps = max(1, max_ws - min_ws + 1)
@@ -359,7 +359,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                     top_n_acc = eval_results[2]
                     score = (acc * 0.2) + (top_n_acc * 0.5) + (avg_conf / 100 * 0.3)
                     top_n_acc_display = f"{top_n_acc*100:.2f}"
-                table_data.append((ws, f"{acc*100:.2f}", top_n_acc_display, f"{avg_conf:.2f}", top_n_pred_str))
+                table_data.append((ws, f"{acc*100:.2f}", top_n_acc_display, top_n_pred_str))
             
             if score > best_score:
                 best_score, best_ws = score, ws
