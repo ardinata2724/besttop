@@ -613,23 +613,6 @@ with tab_scan:
                     st.dataframe(result_df)
                     st.markdown("---")
                     
-                    # Logika untuk menyalin hasil prediksi yang relevan
-                    copyable_text = ""
-                    if label in JALUR_LABELS and "Angka Jalur" in result_df.columns:
-                        st.markdown(f"👇 **Salin Hasil dari Kolom Angka Jalur**")
-                        copyable_text = "\n".join(result_df["Angka Jalur"].astype(str))
-                    else:
-                        prediction_column_name = next((col for col in result_df.columns if col.startswith("Top-") or col.startswith("Prediksi")), None)
-                        if prediction_column_name:
-                            copyable_text = "\n".join(result_df[prediction_column_name].astype(str))
-
-                    if copyable_text:
-                        st.text_area(
-                            f"Klik untuk menyalin",
-                            value=copyable_text,
-                            height=250, key=f"copy_{label}"
-                        )
-
                     if data["ws"] is not None:
                         st.success(f"✅ WS terbaik: {data['ws']}")
                     else:
