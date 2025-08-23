@@ -476,9 +476,20 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_input = "\n".join(st.session_state.get("angka_list", []))
     riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250)
     if riwayat_text != riwayat_input:
-        st.session_state.angka_list = [x.strip() for x in riwayat_text.splitlines() if x.strip().isdigit() and len(x.strip()) == 4]
+        # Modifikasi: Ambil 4 digit angka pertama dari setiap baris
+        new_angka_list = []
+        for line in riwayat_text.splitlines():
+            cleaned_line = line.strip()
+            if cleaned_line:  # Pastikan baris tidak kosong
+                # Ambil bagian pertama sebelum spasi
+                first_part = cleaned_line.split()[0]
+                # Cek apakah 4 karakter pertama adalah digit dan panjangnya minimal 4
+                if len(first_part) >= 4 and first_part[:4].isdigit():
+                    new_angka_list.append(first_part[:4])
+        st.session_state.angka_list = new_angka_list
         st.rerun()
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
+
 
 # --- Definisi Tab ---
 tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs([
