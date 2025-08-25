@@ -435,7 +435,7 @@ with st.sidebar:
     putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
     st.markdown("---")
     st.markdown("### 🎯 Opsi Prediksi")
-    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 6)
+    jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 9)
     jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
     use_transformer = st.checkbox("🤖 Gunakan Transformer", value=True)
@@ -557,8 +557,8 @@ with tab_scan:
     st.info("Klik tombol scan untuk setiap kategori.")
     scan_cols = st.columns(2)
     
-    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 1)
-    max_ws = scan_cols[1].number_input("Max WS", 1, 100, 25)
+    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 5)
+    max_ws = scan_cols[1].number_input("Max WS", 1, 100, 31)
 
     scan_ready = True
     if min_ws >= max_ws:
