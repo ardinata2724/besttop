@@ -619,11 +619,10 @@ with tab_scan:
             elif isinstance(data, dict):
                 result_df = data.get("table")
                 if result_df is not None and not result_df.empty:
-                    # ==========================================================
-                    # MODIFIKASI DIMULAI DI SINI
-                    # ==========================================================
                     
-                    # Cek apakah ini tabel hasil scan "Jalur"
+                    # ==========================================================
+                    # KODE YANG DIPERBAIKI UNTUK MENAMPILKAN HASIL SCAN JALUR
+                    # ==========================================================
                     if 'Angka Jalur' in result_df.columns:
                         # Tampilkan header secara manual
                         header_cols = st.columns([1, 2, 5])
@@ -644,9 +643,6 @@ with tab_scan:
                         # Jika bukan tabel "Jalur", tampilkan seperti biasa
                         styler = result_df.style.set_properties(**{'text-align': 'center'})
                         st.dataframe(styler, use_container_width=True)
-
-                    # ==========================================================
-                    # MODIFIKASI BERAKHIR DI SINI
                     # ==========================================================
                     
                     st.markdown("---")
