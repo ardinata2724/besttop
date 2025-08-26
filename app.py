@@ -335,7 +335,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 top_jalur_num = top_indices[0] + 1
                 second_jalur_num = top_indices[1] + 1
                 angka_jalur_str = (
-                    f"Jalur {top_jalur_num} => {JALUR_ANGKA_MAP[top_jalur_num]}\n\n"
+                    f"Jalur {top_jalur_num} => {JALUR_ANGKA_MAP[top_jalur_num]}\n"
                     f"Jalur {second_jalur_num} => {JALUR_ANGKA_MAP[second_jalur_num]}"
                 )
 
@@ -619,14 +619,36 @@ with tab_scan:
             elif isinstance(data, dict):
                 result_df = data.get("table")
                 if result_df is not None and not result_df.empty:
-                    # Mulai dengan gaya dasar (tengah)
-                    styler = result_df.style.set_properties(**{'text-align': 'center'})
+                    # ==========================================================
+                    # MODIFIKASI DIMULAI DI SINI
+                    # ==========================================================
                     
-                    # Jika kolom 'Angka Jalur' ada, terapkan gaya khusus
+                    # Cek apakah ini tabel hasil scan "Jalur"
                     if 'Angka Jalur' in result_df.columns:
-                        styler = styler.set_properties(subset=['Angka Jalur'], **{'white-space': 'pre-wrap', 'text-align': 'left'})
+                        # Tampilkan header secara manual
+                        header_cols = st.columns([1, 2, 5])
+                        header_cols[0].markdown("**Window Size**")
+                        header_cols[1].markdown("**Prediksi**")
+                        header_cols[2].markdown("**Angka Jalur (Klik ikon 📋 untuk menyalin)**")
+                        st.divider()
+
+                        # Ulangi setiap baris dataframe dan tampilkan dengan tombol salin
+                        for index, row in result_df.iterrows():
+                            row_cols = st.columns([1, 2, 5])
+                            row_cols[0].write(row['Window Size'])
+                            row_cols[1].write(row['Prediksi'])
+                            # Gunakan st.code untuk mendapatkan tombol salin bawaan
+                            row_cols[2].code(row['Angka Jalur'], language=None)
                     
-                    st.dataframe(styler)
+                    else:
+                        # Jika bukan tabel "Jalur", tampilkan seperti biasa
+                        styler = result_df.style.set_properties(**{'text-align': 'center'})
+                        st.dataframe(styler, use_container_width=True)
+
+                    # ==========================================================
+                    # MODIFIKASI BERAKHIR DI SINI
+                    # ==========================================================
+                    
                     st.markdown("---")
                     
                     if data["ws"] is not None:
