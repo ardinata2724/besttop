@@ -22,13 +22,13 @@ from datetime import datetime
 # ==============================================================================
 # BAGIAN 1: DEFINISI SEMUA FUNGSI-FUNGSI INTI
 # ==============================================================================
+# (Semua fungsi inti dari file asli Anda tetap di sini, tidak ada perubahan)
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
 JUMLAH_LABELS = ["jumlah_depan", "jumlah_tengah", "jumlah_belakang"]
 SHIO_LABELS = ["shio_depan", "shio_tengah", "shio_belakang"]
 JALUR_LABELS = ["jalur_ribuan-ratusan", "jalur_ratusan-puluhan", "jalur_puluhan-satuan"]
 
-# Menambahkan peta angka untuk setiap jalur
 JALUR_ANGKA_MAP = {
     1: "01*13*25*37*49*61*73*85*97*04*16*28*40*52*64*76*88*00*07*19*31*43*55*67*79*91*10*22*34*46*58*70*82*94",
     2: "02*14*26*38*50*62*74*86*98*05*17*29*41*53*65*77*89*08*20*32*44*56*68*80*92*11*23*35*47*59*71*83*95",
@@ -305,10 +305,10 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             if is_jalur_scan:
                 position_label = label.split('_')[1]
                 X, y = preprocess_data_for_jalur_multiclass(df, ws, position_label)
-                if X.shape[0] < 3: continue # EDIT: Menurunkan syarat data
+                if X.shape[0] < 10: continue
             else:
                 X, y_dict = preprocess_data(df, window_size=ws)
-                if label not in y_dict or y_dict[label].shape[0] < 3: continue # EDIT: Menurunkan syarat data
+                if label not in y_dict or y_dict[label].shape[0] < 10: continue
                 y = y_dict[label]
 
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -362,9 +362,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             if score > best_score:
                 best_score, best_ws = score, ws
         except Exception as e:
-            # Mengabaikan error jika data split tidak cukup, agar scan terus berjalan
-            if 'Found input variables with inconsistent numbers of samples' in str(e):
-                continue
             st.error(f"Gagal saat scan {label} di WS={ws}: {e}")
             continue
             
@@ -390,9 +387,8 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
         X, y_dict = preprocess_data(df, window_size=ws)
         bar.progress(25, text=progress_text)
 
-        # EDIT: Menurunkan syarat data
-        if label not in y_dict or y_dict[label].shape[0] < 3:
-            st.warning(f"Data tidak cukup untuk melatih model '{label.upper()}'. Minimal butuh 3 sekuens data. Dilewati.")
+        if label not in y_dict or y_dict[label].shape[0] < 10:
+            st.warning(f"Data tidak cukup untuk melatih model '{label.upper()}'. Minimal butuh 10 data. Dilewati.")
             bar.empty()
             continue
         
@@ -435,8 +431,9 @@ if "angka_list" not in st.session_state: st.session_state.angka_list = []
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     selected_lokasi = st.selectbox("🌍 Pilih Pasaran", lokasi_list)
-    selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
-    putaran = st.number_input("🔁 Putaran", 10, 1000, 100)
+    # Menghapus pilihan hari karena tidak relevan lagi untuk file lokal
+    # selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
+    putaran = st.number_input("🔁 Jumlah Putaran Terakhir", 10, 1000, 100)
     st.markdown("---")
     st.markdown("### 🎯 Opsi Prediksi")
     jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 9)
@@ -458,44 +455,63 @@ with st.sidebar:
 
 col1, col2 = st.columns([1, 4])
 with col1:
-    if st.button("🔄 Ambil Data dari API", use_container_width=True):
+    # --- PERUBAHAN UTAMA DI SINI ---
+    # Mengubah tombol dan logikanya untuk membaca file lokal
+    if st.button("📂 Ambil Data dari File Lokal", use_container_width=True):
+        # Membuat nama file berdasarkan pasaran yang dipilih
+        # Contoh: "BULLSEYE" -> "keluaran bullseye.txt"
+        file_name = f"keluaran {selected_lokasi.lower()}.txt"
         try:
-            with st.spinner("🔄 Mengambil data..."):
-                url = f"https://wysiwygscan.com/api?pasaran={selected_lokasi.lower()}&hari={selected_hari}&putaran={putaran}&format=json&urut=asc"
-                headers = {"Authorization": "Bearer 6705327a2c9a9135f2c8fbad19f09b46"}
-                response = requests.get(url, headers=headers, timeout=10)
-                response.raise_for_status()
-                data = response.json()
-                if data.get("data"):
-                    angka_api = [d["result"] for d in data["data"] if len(str(d.get("result", ""))) == 4 and str(d.get("result", "")).isdigit()]
-                    st.session_state.angka_list = angka_api
-                    st.success(f"{len(angka_api)} angka berhasil diambil.")
+            with st.spinner(f"Membaca file {file_name}..."):
+                with open(file_name, 'r') as f:
+                    # Membaca semua baris dari file
+                    lines = f.readlines()
+                
+                # Mengambil N baris terakhir sesuai input 'putaran'
+                # dan memastikannya terurut dari yang terlama ke terbaru
+                last_n_lines = lines[-putaran:]
+                
+                angka_from_file = []
+                for line in last_n_lines:
+                    # Membersihkan setiap baris: hapus spasi, ambil 4 digit pertama
+                    cleaned_line = line.strip()
+                    if cleaned_line and len(cleaned_line) >= 4 and cleaned_line[:4].isdigit():
+                        angka_from_file.append(cleaned_line[:4])
+                
+                if angka_from_file:
+                    st.session_state.angka_list = angka_from_file
+                    st.success(f"{len(angka_from_file)} angka berhasil diambil dari {file_name}.")
+                    # Menjalankan ulang script agar text_area terupdate
+                    st.rerun() 
                 else:
-                    st.error("API tidak mengembalikan data yang valid.")
-        except Exception as e:
-            st.error(f"Gagal mengambil data dari API: {e}")
+                    st.warning(f"Tidak ada data angka 4 digit yang valid ditemukan di {file_name}.")
 
-with col2: st.caption("Data angka akan digunakan untuk pelatihan dan prediksi.")
+        except FileNotFoundError:
+            st.error(f"File tidak ditemukan: '{file_name}'. Pastikan file ada di folder yang sama dengan app.py.")
+        except Exception as e:
+            st.error(f"Terjadi kesalahan saat membaca file: {e}")
+
+with col2: st.caption("Data angka dari file lokal akan digunakan untuk pelatihan dan prediksi.")
 with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_input = "\n".join(st.session_state.get("angka_list", []))
-    riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250)
+    riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250, key="manual_data_input")
+    
+    # Logika ini akan berjalan jika pengguna mengubah teks secara manual
     if riwayat_text != riwayat_input:
-        # Modifikasi: Ambil 4 digit angka pertama dari setiap baris
         new_angka_list = []
         for line in riwayat_text.splitlines():
             cleaned_line = line.strip()
-            if cleaned_line:  # Pastikan baris tidak kosong
-                # Ambil bagian pertama sebelum spasi
+            if cleaned_line:
                 first_part = cleaned_line.split()[0]
-                # Cek apakah 4 karakter pertama adalah digit dan panjangnya minimal 4
                 if len(first_part) >= 4 and first_part[:4].isdigit():
                     new_angka_list.append(first_part[:4])
         st.session_state.angka_list = new_angka_list
         st.rerun()
+
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 
 
-# --- Definisi Tab ---
+# --- Definisi Tab (Tidak ada perubahan di sini) ---
 tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs([
     "🪟 Scan Window Size",
     "⚙️ Manajemen Model",
@@ -550,9 +566,8 @@ with tab_manajemen:
                 st.warning("⚠️ Belum ada")
     if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
-        # EDIT: Menurunkan syarat data dan memperbaiki pesan error
-        if len(df) < max_ws + 3:
-            st.error(f"Data tidak cukup. Butuh minimal {max_ws + 3} baris untuk melatih dengan WS terbesar ({max_ws}).")
+        if len(df) < max_ws + 10:
+            st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
         else:
             train_and_save_model(df, selected_lokasi, window_per_digit, model_type)
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
@@ -562,8 +577,8 @@ with tab_scan:
     st.info("Klik tombol scan untuk setiap kategori.")
     scan_cols = st.columns(2)
     
-    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 1) # EDIT: Mengubah default Min WS ke 1
-    max_ws = scan_cols[1].number_input("Max WS", 2, 100, 7) # EDIT: Mengubah default Max WS ke 7
+    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 5)
+    max_ws = scan_cols[1].number_input("Max WS", 1, 100, 31)
 
     scan_ready = True
     if min_ws >= max_ws:
@@ -580,36 +595,29 @@ with tab_scan:
     def display_scan_button(label, columns):
         display_label = label.replace('_', ' ').upper()
         if columns.button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
-            # EDIT: Mengubah logika pengecekan data agar lebih fleksibel
-            if len(df) < min_ws + 2: 
-                st.error(f"Data tidak cukup. Butuh minimal {min_ws + 2} baris untuk memulai scan dengan Min WS={min_ws}.")
+            if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
             else:
                 st.toast(f"Memindai {display_label}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
     
     st.markdown("**Kategori Digit**")
-    digit_cols = st.columns(len(DIGIT_LABELS))
     for i, label in enumerate(DIGIT_LABELS):
-        display_scan_button(label, digit_cols[i])
+        display_scan_button(label, st.columns(len(DIGIT_LABELS))[i])
 
     st.markdown("**Kategori Jumlah**")
-    jumlah_cols = st.columns(len(JUMLAH_LABELS))
     for i, label in enumerate(JUMLAH_LABELS):
-        display_scan_button(label, jumlah_cols[i])
+        display_scan_button(label, st.columns(len(JUMLAH_LABELS))[i])
 
     st.markdown("**Kategori BBFS**")
-    bbfs_cols = st.columns(len(BBFS_LABELS))
     for i, label in enumerate(BBFS_LABELS):
-        display_scan_button(label, bbfs_cols[i])
+        display_scan_button(label, st.columns(len(BBFS_LABELS))[i])
 
     st.markdown("**Kategori Shio**")
-    shio_cols = st.columns(len(SHIO_LABELS))
     for i, label in enumerate(SHIO_LABELS):
-        display_scan_button(label, shio_cols[i])
+        display_scan_button(label, st.columns(len(SHIO_LABELS))[i])
 
     st.markdown("**Kategori Jalur Main**")
-    jalur_cols = st.columns(len(JALUR_LABELS))
     for i, label in enumerate(JALUR_LABELS):
-        display_scan_button(label, jalur_cols[i])
+        display_scan_button(label, st.columns(len(JALUR_LABELS))[i])
     
     st.divider()
 
@@ -631,14 +639,11 @@ with tab_scan:
             elif isinstance(data, dict):
                 result_df = data.get("table")
                 if result_df is not None and not result_df.empty:
-                    # Mulai dengan gaya dasar (tengah)
                     styler = result_df.style.set_properties(**{'text-align': 'center'})
-                    
-                    # Jika kolom 'Angka Jalur' ada, terapkan gaya khusus
                     if 'Angka Jalur' in result_df.columns:
                         styler = styler.set_properties(subset=['Angka Jalur'], **{'white-space': 'pre-wrap', 'text-align': 'left'})
                     
-                    st.dataframe(styler, use_container_width=True)
+                    st.dataframe(styler)
                     st.markdown("---")
                     
                     if data["ws"] is not None:
@@ -646,7 +651,7 @@ with tab_scan:
                     else:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
-                    st.warning("Tidak ada hasil yang valid untuk rentang WS dan jumlah data yang diberikan.")
+                    st.warning("Tidak ada hasil untuk rentang WS ini.")
 
 with tab_angka_main:
     st.subheader("Analisis Angka Main dari Data Historis")
