@@ -5,11 +5,16 @@ from datetime import datetime, timezone, timedelta
 # --- KONFIGURASI ---
 # Kamus (dictionary) yang memetakan nama pasaran di API ke nama file Anda
 PASARAN_FILES = {
+    'hongkongpools': 'keluaran hongkongpools.txt',
     'hongkong': 'keluaran hongkong lotto.txt',
+    'sydneypools': 'keluaran sydneypools.txt',
     'sydney': 'keluaran sydney lotto.txt',
+    'bullseye': 'keluaran bullseye.txt',
     'singapore': 'keluaran singapura.txt',
-    # Tambahkan pasaran lain jika ada, contoh:
-    # 'bullseye': 'keluaran bullseye.txt', 
+    # Konfigurasi untuk pasaran Maroko sudah benar di sini
+    'moroccoquatro18': 'keluaran morocco quatro 18.txt',
+    'moroccoquatro21': 'keluaran morocco quatro 21.txt',
+    'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
 # Header otorisasi untuk API
@@ -41,13 +46,13 @@ def update_file(filename, new_result):
         print(f"File {filename} tidak ditemukan. Membuat file baru.")
         existing_results = set()
     else:
-        with open(filename, 'r') as f:
+        with open(filename, 'r', encoding='utf-8') as f:
             # Membaca semua baris dan menghapus spasi/newline yang tidak perlu
             existing_results = set(line.strip() for line in f if line.strip())
 
     if new_result not in existing_results:
         print(f"Hasil baru ditemukan untuk {filename}: {new_result}. Menambahkan ke file.")
-        with open(filename, 'a') as f:
+        with open(filename, 'a', encoding='utf-8') as f:
             f.write(f"\n{new_result}")
         return True
     else:
