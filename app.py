@@ -435,7 +435,7 @@ with st.sidebar:
     # selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
     putaran = st.number_input("🔁 Jumlah Putaran Terakhir", 10, 1000, 100)
     st.markdown("---")
-    st.markdown("### � Opsi Prediksi")
+    st.markdown("### 🎯 Opsi Prediksi")
     jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 9)
     jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
@@ -455,9 +455,8 @@ with st.sidebar:
 
 col1, col2 = st.columns([1, 4])
 with col1:
-    # --- PERUBAHAN UTAMA DI SINI ---
-    # Mengubah tombol dan logikanya untuk membaca file lokal
-    if st.button("📂 Ambil Data dari File Lokal", use_container_width=True):
+    # --- PERUBAHAN DI SINI ---
+    if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
         # Membuat nama file berdasarkan pasaran yang dipilih
         # Contoh: "BULLSEYE" -> "keluaran bullseye.txt"
         file_name = f"keluaran {selected_lokasi.lower()}.txt"
