@@ -476,18 +476,37 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_input = "\n".join(st.session_state.get("angka_list", []))
     riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250)
     if riwayat_text != riwayat_input:
-        # Modifikasi: Ambil 4 digit angka pertama dari setiap baris
+        # ===== MODIFIKASI DIMULAI DI SINI =====
         new_angka_list = []
         for line in riwayat_text.splitlines():
             cleaned_line = line.strip()
-            if cleaned_line:  # Pastikan baris tidak kosong
-                # Ambil bagian pertama sebelum spasi
-                first_part = cleaned_line.split()[0]
-                # Cek apakah 4 karakter pertama adalah digit dan panjangnya minimal 4
-                if len(first_part) >= 4 and first_part[:4].isdigit():
-                    new_angka_list.append(first_part[:4])
+            if not cleaned_line:
+                continue
+
+            # Prioritas 1: Mencari format "Result: XXXX"
+            if 'Result:' in cleaned_line:
+                try:
+                    # Ambil teks setelah "Result:", hapus spasi, dan ambil 4 digit pertama
+                    num_str = cleaned_line.split('Result:')[1].strip()
+                    if len(num_str) >= 4 and num_str[:4].isdigit():
+                        new_angka_list.append(num_str[:4])
+                except IndexError:
+                    # Abaikan jika ada "Result:" tapi tidak ada angka setelahnya
+                    continue
+            
+            # Prioritas 2: Jika tidak ada "Result:", cek apakah baris itu sendiri adalah angka
+            # Ini akan menangani input seperti "5498" atau "5498 - Keterangan"
+            else:
+                # Ambil bagian pertama dari baris (sebelum spasi)
+                parts = cleaned_line.split()
+                if parts: # Pastikan ada sesuatu di baris itu
+                    potential_num = parts[0]
+                    if len(potential_num) >= 4 and potential_num[:4].isdigit():
+                        new_angka_list.append(potential_num[:4])
+
         st.session_state.angka_list = new_angka_list
         st.rerun()
+        # ===== MODIFIKASI SELESAI DI SINI =====
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 
 
