@@ -435,7 +435,7 @@ with st.sidebar:
     # selected_hari = st.selectbox("📅 Hari", ["harian", "kemarin", "2hari", "3hari"])
     putaran = st.number_input("🔁 Jumlah Putaran Terakhir", 10, 1000, 100)
     st.markdown("---")
-    st.markdown("### 🎯 Opsi Prediksi")
+    st.markdown("### � Opsi Prediksi")
     jumlah_digit = st.slider("🔢 Jumlah Digit Prediksi", 1, 9, 9)
     jumlah_digit_shio = st.slider("🐉 Jumlah Digit Prediksi Khusus Shio", 1, 12, 12)
     metode = st.selectbox("🧠 Metode", ["Markov", "LSTM AI"])
@@ -595,11 +595,13 @@ with tab_scan:
     def display_scan_button(label, columns):
         display_label = label.replace('_', ' ').upper()
         if columns.button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
-            # --- PERUBAHAN DI SINI ---
-            # Pemeriksaan jumlah data dihapus agar bisa scan dengan data minimal.
-            st.toast(f"Memindai {display_label}...", icon="⏳")
-            st.session_state.scan_outputs[label] = "PENDING"
-            st.rerun()
+            # --- KODE DIKEMBALIKAN KE VERSI INI ---
+            if len(df) < max_ws + 10: 
+                st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
+            else:
+                st.toast(f"Memindai {display_label}...", icon="⏳")
+                st.session_state.scan_outputs[label] = "PENDING"
+                st.rerun()
     
     st.markdown("**Kategori Digit**")
     for i, label in enumerate(DIGIT_LABELS):
