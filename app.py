@@ -305,10 +305,10 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             if is_jalur_scan:
                 position_label = label.split('_')[1]
                 X, y = preprocess_data_for_jalur_multiclass(df, ws, position_label)
-                if X.shape[0] < 10: continue
+                if X.shape[0] < 3: continue # EDIT: Menurunkan syarat data
             else:
                 X, y_dict = preprocess_data(df, window_size=ws)
-                if label not in y_dict or y_dict[label].shape[0] < 10: continue
+                if label not in y_dict or y_dict[label].shape[0] < 3: continue # EDIT: Menurunkan syarat data
                 y = y_dict[label]
 
             X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -362,6 +362,9 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             if score > best_score:
                 best_score, best_ws = score, ws
         except Exception as e:
+            # Mengabaikan error jika data split tidak cukup, agar scan terus berjalan
+            if 'Found input variables with inconsistent numbers of samples' in str(e):
+                continue
             st.error(f"Gagal saat scan {label} di WS={ws}: {e}")
             continue
             
@@ -387,8 +390,9 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
         X, y_dict = preprocess_data(df, window_size=ws)
         bar.progress(25, text=progress_text)
 
-        if label not in y_dict or y_dict[label].shape[0] < 10:
-            st.warning(f"Data tidak cukup untuk melatih model '{label.upper()}'. Minimal butuh 10 data. Dilewati.")
+        # EDIT: Menurunkan syarat data
+        if label not in y_dict or y_dict[label].shape[0] < 3:
+            st.warning(f"Data tidak cukup untuk melatih model '{label.upper()}'. Minimal butuh 3 sekuens data. Dilewati.")
             bar.empty()
             continue
         
@@ -546,8 +550,9 @@ with tab_manajemen:
                 st.warning("⚠️ Belum ada")
     if st.button("📚 Latih & Simpan Semua Model AI", use_container_width=True, type="primary"):
         max_ws = max(window_per_digit.values())
-        if len(df) < max_ws + 10:
-            st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
+        # EDIT: Menurunkan syarat data dan memperbaiki pesan error
+        if len(df) < max_ws + 3:
+            st.error(f"Data tidak cukup. Butuh minimal {max_ws + 3} baris untuk melatih dengan WS terbesar ({max_ws}).")
         else:
             train_and_save_model(df, selected_lokasi, window_per_digit, model_type)
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
@@ -557,8 +562,8 @@ with tab_scan:
     st.info("Klik tombol scan untuk setiap kategori.")
     scan_cols = st.columns(2)
     
-    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 5)
-    max_ws = scan_cols[1].number_input("Max WS", 1, 100, 31)
+    min_ws = scan_cols[0].number_input("Min WS", 1, 99, 1) # EDIT: Mengubah default Min WS ke 1
+    max_ws = scan_cols[1].number_input("Max WS", 2, 100, 7) # EDIT: Mengubah default Max WS ke 7
 
     scan_ready = True
     if min_ws >= max_ws:
@@ -575,29 +580,36 @@ with tab_scan:
     def display_scan_button(label, columns):
         display_label = label.replace('_', ' ').upper()
         if columns.button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
-            if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
+            # EDIT: Mengubah logika pengecekan data agar lebih fleksibel
+            if len(df) < min_ws + 2: 
+                st.error(f"Data tidak cukup. Butuh minimal {min_ws + 2} baris untuk memulai scan dengan Min WS={min_ws}.")
             else:
                 st.toast(f"Memindai {display_label}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
     
     st.markdown("**Kategori Digit**")
+    digit_cols = st.columns(len(DIGIT_LABELS))
     for i, label in enumerate(DIGIT_LABELS):
-        display_scan_button(label, st.columns(len(DIGIT_LABELS))[i])
+        display_scan_button(label, digit_cols[i])
 
     st.markdown("**Kategori Jumlah**")
+    jumlah_cols = st.columns(len(JUMLAH_LABELS))
     for i, label in enumerate(JUMLAH_LABELS):
-        display_scan_button(label, st.columns(len(JUMLAH_LABELS))[i])
+        display_scan_button(label, jumlah_cols[i])
 
     st.markdown("**Kategori BBFS**")
+    bbfs_cols = st.columns(len(BBFS_LABELS))
     for i, label in enumerate(BBFS_LABELS):
-        display_scan_button(label, st.columns(len(BBFS_LABELS))[i])
+        display_scan_button(label, bbfs_cols[i])
 
     st.markdown("**Kategori Shio**")
+    shio_cols = st.columns(len(SHIO_LABELS))
     for i, label in enumerate(SHIO_LABELS):
-        display_scan_button(label, st.columns(len(SHIO_LABELS))[i])
+        display_scan_button(label, shio_cols[i])
 
     st.markdown("**Kategori Jalur Main**")
+    jalur_cols = st.columns(len(JALUR_LABELS))
     for i, label in enumerate(JALUR_LABELS):
-        display_scan_button(label, st.columns(len(JALUR_LABELS))[i])
+        display_scan_button(label, jalur_cols[i])
     
     st.divider()
 
@@ -626,7 +638,7 @@ with tab_scan:
                     if 'Angka Jalur' in result_df.columns:
                         styler = styler.set_properties(subset=['Angka Jalur'], **{'white-space': 'pre-wrap', 'text-align': 'left'})
                     
-                    st.dataframe(styler)
+                    st.dataframe(styler, use_container_width=True)
                     st.markdown("---")
                     
                     if data["ws"] is not None:
@@ -634,7 +646,7 @@ with tab_scan:
                     else:
                         st.warning("Tidak ditemukan WS yang menonjol.")
                 else:
-                    st.warning("Tidak ada hasil untuk rentang WS ini.")
+                    st.warning("Tidak ada hasil yang valid untuk rentang WS dan jumlah data yang diberikan.")
 
 with tab_angka_main:
     st.subheader("Analisis Angka Main dari Data Historis")
