@@ -595,9 +595,11 @@ with tab_scan:
     def display_scan_button(label, columns):
         display_label = label.replace('_', ' ').upper()
         if columns.button(f"🔎 Scan {display_label}", use_container_width=True, disabled=not scan_ready, key=f"scan_{label}"):
-            if len(df) < max_ws + 10: st.error(f"Data tidak cukup. Butuh {max_ws + 10} baris.")
-            else:
-                st.toast(f"Memindai {display_label}...", icon="⏳"); st.session_state.scan_outputs[label] = "PENDING"; st.rerun()
+            # --- PERUBAHAN DI SINI ---
+            # Pemeriksaan jumlah data dihapus agar bisa scan dengan data minimal.
+            st.toast(f"Memindai {display_label}...", icon="⏳")
+            st.session_state.scan_outputs[label] = "PENDING"
+            st.rerun()
     
     st.markdown("**Kategori Digit**")
     for i, label in enumerate(DIGIT_LABELS):
