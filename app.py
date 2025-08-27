@@ -455,7 +455,6 @@ with st.sidebar:
 
 col1, col2 = st.columns([1, 4])
 with col1:
-    # --- PERUBAHAN DI SINI ---
     if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
         # Membuat nama file berdasarkan pasaran yang dipilih
         # Contoh: "BULLSEYE" -> "keluaran bullseye.txt"
@@ -479,7 +478,8 @@ with col1:
                 
                 if angka_from_file:
                     st.session_state.angka_list = angka_from_file
-                    st.success(f"{len(angka_from_file)} angka berhasil diambil dari {file_name}.")
+                    # --- PERUBAHAN DI SINI ---
+                    st.success(f"{len(angka_from_file)} dari {putaran} putaran terakhir berhasil diambil.")
                     # Menjalankan ulang script agar text_area terupdate
                     st.rerun() 
                 else:
