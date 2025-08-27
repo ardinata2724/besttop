@@ -5,9 +5,18 @@ import os
 import time
 import random
 import numpy as np
-# HEAVY IMPORTS LIKE TENSORFLOW ARE REMOVED FROM HERE
+import tensorflow as tf
 from collections import defaultdict, Counter
 from itertools import product
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Model, load_model
+from tensorflow.keras.layers import (
+    Input, Embedding, Bidirectional, LSTM, Dropout, Dense,
+    LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
+)
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.metrics import TopKCategoricalAccuracy
 from datetime import datetime
 
 # ==============================================================================
@@ -19,46 +28,13 @@ JUMLAH_LABELS = ["jumlah_depan", "jumlah_tengah", "jumlah_belakang"]
 SHIO_LABELS = ["shio_depan", "shio_tengah", "shio_belakang"]
 JALUR_LABELS = ["jalur_ribuan-ratusan", "jalur_ratusan-puluhan", "jalur_puluhan-satuan"]
 
+# Menambahkan peta angka untuk setiap jalur
 JALUR_ANGKA_MAP = {
     1: "01*13*25*37*49*61*73*85*97*04*16*28*40*52*64*76*88*00*07*19*31*43*55*67*79*91*10*22*34*46*58*70*82*94",
     2: "02*14*26*38*50*62*74*86*98*05*17*29*41*53*65*77*89*08*20*32*44*56*68*80*92*11*23*35*47*59*71*83*95",
     3: "03*15*27*39*51*63*75*87*99*06*18*30*42*54*66*78*90*09*21*33*45*57*69*81*93*12*24*36*48*60*72*84*96"
 }
 
-# --- PERBAIKAN: Fungsi Helper untuk Lazy Load PositionalEncoding ---
-def _get_positional_encoding_layer():
-    """Membungkus definisi class untuk menunda impor TensorFlow."""
-    import tensorflow as tf
-    
-    class PositionalEncoding(tf.keras.layers.Layer):
-        """Layer untuk menambahkan positional encoding pada model Transformer."""
-        def call(self, x):
-            seq_len, d_model = tf.shape(x)[1], tf.shape(x)[2]
-            pos = tf.cast(tf.range(seq_len)[:, tf.newaxis], dtype=tf.float32)
-            i = tf.cast(tf.range(d_model)[tf.newaxis, :], dtype=tf.float32)
-            angle_rates = 1 / tf.pow(10000.0, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
-            angle_rads = pos * angle_rates
-            sines, cosines = tf.math.sin(angle_rads[:, 0::2]), tf.math.cos(angle_rads[:, 1::2])
-            pos_encoding = tf.concat([sines, cosines], axis=-1)
-            return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
-            
-    return PositionalEncoding
-
-# --- PERBAIKAN: Fungsi Caching untuk memuat model AI ---
-@st.cache_resource
-def load_cached_model(model_path):
-    """Memuat model Keras dengan cache untuk performa tinggi."""
-    from tensorflow.keras.models import load_model
-    
-    PositionalEncoding = _get_positional_encoding_layer()
-    custom_objects = {"PositionalEncoding": PositionalEncoding}
-    
-    try:
-        model = load_model(model_path, custom_objects=custom_objects)
-        return model
-    except Exception as e:
-        st.error(f"Error memuat model dari {model_path}: {e}")
-        return None
 
 def _ensure_unique_top_n(top_list, n=6):
     """Memastikan daftar top-N memiliki item unik hingga N."""
@@ -154,11 +130,20 @@ def calculate_markov_ai(df, top_n=6, mode='belakang'):
     
     return "\n".join(output_lines)
 
+class PositionalEncoding(tf.keras.layers.Layer):
+    """Layer untuk menambahkan positional encoding pada model Transformer."""
+    def call(self, x):
+        seq_len, d_model = tf.shape(x)[1], tf.shape(x)[2]
+        pos = tf.cast(tf.range(seq_len)[:, tf.newaxis], dtype=tf.float32)
+        i = tf.cast(tf.range(d_model)[tf.newaxis, :], dtype=tf.float32)
+        angle_rates = 1 / tf.pow(10000.0, (2 * (i // 2)) / tf.cast(d_model, tf.float32))
+        angle_rads = pos * angle_rates
+        sines, cosines = tf.math.sin(angle_rads[:, 0::2]), tf.math.cos(angle_rads[:, 1::2])
+        pos_encoding = tf.concat([sines, cosines], axis=-1)
+        return x + tf.cast(tf.expand_dims(pos_encoding, 0), tf.float32)
+
 def preprocess_data(df, window_size=7):
     """Mempersiapkan data sekuensial untuk model AI."""
-    # PERBAIKAN: Lazy load
-    from tensorflow.keras.utils import to_categorical
-
     if len(df) < window_size + 1: return np.array([]), {}
     angka = df["angka"].values
     
@@ -207,9 +192,6 @@ def preprocess_data(df, window_size=7):
 
 def preprocess_data_for_jalur_multiclass(df, window_size, target_position):
     """Mempersiapkan data untuk analisis Jalur Main sebagai masalah multi-kelas (1, 2, atau 3)."""
-    # PERBAIKAN: Lazy load
-    from tensorflow.keras.utils import to_categorical
-    
     if len(df) < window_size + 1:
         return np.array([]), np.array([])
 
@@ -241,14 +223,6 @@ def preprocess_data_for_jalur_multiclass(df, window_size, target_position):
 
 def build_model(input_len, model_type="lstm", problem_type="multiclass", num_classes=10):
     """Membangun arsitektur model AI, mendukung jumlah kelas yang dinamis."""
-    # PERBAIKAN: Lazy load
-    from tensorflow.keras.models import Model
-    from tensorflow.keras.layers import (
-        Input, Embedding, Bidirectional, LSTM, Dropout, Dense,
-        LayerNormalization, MultiHeadAttention, GlobalAveragePooling1D
-    )
-    PositionalEncoding = _get_positional_encoding_layer()
-    
     inputs = Input(shape=(input_len,))
     x = Embedding(input_dim=10, output_dim=64)(inputs)
     x = PositionalEncoding()(x)
@@ -272,6 +246,7 @@ def build_model(input_len, model_type="lstm", problem_type="multiclass", num_cla
     model = Model(inputs, outputs)
     return model, loss
 
+
 def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
     """Melakukan prediksi menggunakan model AI yang sudah dilatih."""
     results, probs = [], []
@@ -282,29 +257,19 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n=6):
         if X.shape[0] == 0: return None, None
         model_path = f"saved_models/{loc_id}_{label}_{model_type}.h5"
         if not os.path.exists(model_path): return None, None
-        
-        # PERBAIKAN: Gunakan fungsi caching
-        model = load_cached_model(model_path)
-        if model is None:
-            return None, None
-            
         try:
+            model = load_model(model_path, custom_objects={"PositionalEncoding": PositionalEncoding})
             pred = model.predict(X, verbose=0)
             avg = np.mean(pred, axis=0)
             top_indices = avg.argsort()[-top_n:][::-1]
             results.append(list(top_indices))
             probs.append([avg[i] for i in top_indices])
         except Exception as e:
-            st.error(f"Error saat prediksi dengan model {label}: {e}"); return None, None
+            st.error(f"Error memuat model untuk {label}: {e}"); return None, None
     return results, probs
 
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
     """Mencari window size terbaik, mendukung semua jenis kategori termasuk Jalur Main."""
-    # PERBAIKAN: Lazy load
-    from sklearn.model_selection import train_test_split
-    from tensorflow.keras.callbacks import EarlyStopping
-    from tensorflow.keras.metrics import TopKCategoricalAccuracy
-    
     best_ws, best_score = None, -1
     table_data = []
     
@@ -404,12 +369,9 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     if not table_data: return None, None
     return best_ws, pd.DataFrame(table_data, columns=table_cols)
 
+
 def train_and_save_model(df, lokasi, window_dict, model_type):
     """Melatih dan menyimpan model untuk setiap posisi digit (hanya untuk multi-class)."""
-    # PERBAIKAN: Lazy load
-    from sklearn.model_selection import train_test_split
-    from tensorflow.keras.callbacks import EarlyStopping
-
     st.info(f"Memulai proses pelatihan untuk lokasi: {lokasi} (Model: {model_type.upper()})")
     lokasi_id = lokasi.lower().strip().replace(" ", "_")
     
@@ -514,29 +476,18 @@ with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_input = "\n".join(st.session_state.get("angka_list", []))
     riwayat_text = st.text_area("1 angka per baris:", riwayat_input, height=250)
     if riwayat_text != riwayat_input:
+        # Modifikasi: Ambil 4 digit angka pertama dari setiap baris
         new_angka_list = []
         for line in riwayat_text.splitlines():
             cleaned_line = line.strip()
-            if not cleaned_line:
-                continue
-
-            if 'Result:' in cleaned_line:
-                try:
-                    num_str = cleaned_line.split('Result:')[1].strip()
-                    if len(num_str) >= 4 and num_str[:4].isdigit():
-                        new_angka_list.append(num_str[:4])
-                except IndexError:
-                    continue
-            else:
-                parts = cleaned_line.split()
-                if parts:
-                    potential_num = parts[0]
-                    if len(potential_num) >= 4 and potential_num[:4].isdigit():
-                        new_angka_list.append(potential_num[:4])
-
+            if cleaned_line:  # Pastikan baris tidak kosong
+                # Ambil bagian pertama sebelum spasi
+                first_part = cleaned_line.split()[0]
+                # Cek apakah 4 karakter pertama adalah digit dan panjangnya minimal 4
+                if len(first_part) >= 4 and first_part[:4].isdigit():
+                    new_angka_list.append(first_part[:4])
         st.session_state.angka_list = new_angka_list
         st.rerun()
-
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 
 
@@ -668,8 +619,10 @@ with tab_scan:
             elif isinstance(data, dict):
                 result_df = data.get("table")
                 if result_df is not None and not result_df.empty:
+                    # Mulai dengan gaya dasar (tengah)
                     styler = result_df.style.set_properties(**{'text-align': 'center'})
                     
+                    # Jika kolom 'Angka Jalur' ada, terapkan gaya khusus
                     if 'Angka Jalur' in result_df.columns:
                         styler = styler.set_properties(subset=['Angka Jalur'], **{'white-space': 'pre-wrap', 'text-align': 'left'})
                     
