@@ -16,99 +16,74 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-# ===== MODIFIKASI: Menambahkan URL khusus untuk setiap jenis halaman =====
-TARGET_URLS = {
-    # Pasaran di Halaman Utama
-    'hongkongpools': 'https://angkanet.tv/',
-    'hongkong': 'https://angkanet.tv/',
-    'sydneypools': 'https://angkanet.tv/',
-    'sydney': 'https://angkanet.tv/',
-    'singapore': 'https://angkanet.tv/',
-    'bullseye': 'https://angkanet.tv/',
-    
-    # Pasaran di Halaman "Rumus Harian" (URL ini adalah contoh, mungkin perlu penyesuaian)
-    'moroccoquatro21': 'https://angkanet.tv/rumus-lengkap/?pasaran=morocco-quatro-21-00-wib',
-    'moroccoquatro18': 'https://angkanet.tv/rumus-lengkap/?pasaran=morocco-quatro-18-00-wib',
-    'moroccoquatro00': 'https://angkanet.tv/rumus-lengkap/?pasaran=morocco-quatro-00-00-wib',
-}
-
-# Kamus untuk mencocokkan nama pasaran kita dengan nama yang ada di tabel Halaman Utama Angkanet
-ANGKANET_MAIN_PAGE_NAMES = {
+# ===== LOGIKA BARU UNTUK MEMBACA ANGKANET =====
+ANGKANET_URL = "https://angkanet.tv/"
+ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
     'hongkong': 'Hongkong Pools',
     'sydneypools': 'Sydney Pools',
     'sydney': 'Sydney Pools',
     'singapore': 'Singapore',
     'bullseye': 'Bullseye',
+    'moroccoquatro21': 'Morocco Quatro 21.00 Wib',
+    'moroccoquatro18': 'Morocco Quatro 18.00 Wib',
+    'moroccoquatro00': 'Morocco Quatro 00.00 Wib',
 }
-
-# Header browser standar
 WEB_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
-def _scrape_main_page_table(soup, market_name):
-    """Fungsi untuk mengambil data dari tabel di halaman utama Angkanet."""
-    table = soup.find('table')
-    if not table: return None
-    rows = table.find('tbody').find_all('tr')
-    for row in rows:
-        cells = row.find_all('td')
-        if len(cells) > 2 and market_name.lower() in cells[0].text.strip().lower():
-            result = ''.join(filter(str.isdigit, cells[2].text))
-            return result if len(result) == 4 and result.isdigit() else None
-    return None
-
-def _scrape_rumus_page(soup):
-    """Fungsi untuk mengambil data dari halaman 'Rumus Harian' Angkanet."""
-    # Mencari tabel hasil, biasanya yang pertama di halaman rumus
-    result_table = soup.find('table', class_='table-hover')
-    if not result_table: return None
-    # Hasil terbaru biasanya ada di baris pertama dari body tabel
-    first_row = result_table.find('tbody').find('tr')
-    if not first_row: return None
-    # Di halaman rumus, hasil ada di kolom kedua (index 1)
-    cells = first_row.find_all('td')
-    if len(cells) > 1:
-        result = cells[1].text.strip()
-        return result if len(result) == 4 and result.isdigit() else None
-    return None
-
+# --- FUNGSI get_latest_result DIBAWAH INI TELAH DIPERBAIKI TOTAL ---
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru dengan metode web scraping yang sesuai."""
+    """Mengambil hasil terbaru dari Angkanet dengan logika pencarian yang lebih andal."""
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in TARGET_URLS:
-        print(f"Tidak ada URL target untuk pasaran: {pasaran}. Dilewati.")
+    if pasaran_lower not in ANGKANET_MARKET_NAMES:
+        print(f"Pasaran '{pasaran}' tidak dikonfigurasi untuk Angkanet. Dilewati.")
         return None
 
-    url = TARGET_URLS[pasaran_lower]
-    print(f"Mencoba mengambil data dari URL: {url}")
+    market_name_to_find = ANGKANET_MARKET_NAMES[pasaran_lower]
+    print(f"Mencari '{market_name_to_find}' di {ANGKANET_URL}")
     
     try:
-        response = requests.get(url, headers=WEB_HEADERS, timeout=20)
+        response = requests.get(ANGKANET_URL, headers=WEB_HEADERS, timeout=20)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        result = None
-        # Memutuskan fungsi mana yang akan digunakan berdasarkan pasaran
-        if pasaran_lower in ANGKANET_MAIN_PAGE_NAMES:
-            market_name_to_find = ANGKANET_MAIN_PAGE_NAMES[pasaran_lower]
-            result = _scrape_main_page_table(soup, market_name_to_find)
-        else: # Asumsikan ini adalah halaman rumus (untuk Maroko)
-            result = _scrape_rumus_page(soup)
-
-        if result:
-            print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
-            return result
-        else:
-            print(f"Gagal menemukan hasil yang valid untuk {pasaran} di halaman tersebut.")
+        # Logika baru: Mencari semua tabel di halaman
+        tables = soup.find_all('table')
+        if not tables:
+            print("Tidak ada tabel ditemukan di halaman.")
             return None
 
+        for table in tables:
+            rows = table.find_all('tr')
+            for row in rows:
+                cells = row.find_all('td')
+                # Memastikan baris memiliki setidaknya 3 kolom (Market, Tanggal, Keluaran)
+                if len(cells) > 2:
+                    market_cell = cells[0].find('a') # Nama market biasanya dalam tag <a>
+                    if market_cell:
+                        current_market_name = market_cell.text.strip()
+                        # Memeriksa apakah nama market yang kita cari ada di baris ini
+                        if market_name_to_find.lower() in current_market_name.lower():
+                            # Kolom ketiga (index 2) berisi angka keluaran
+                            result_cell = cells[2]
+                            result_numbers = result_cell.find_all('b') # Angka ada di dalam tag <b>
+                            
+                            result_str = "".join([num.text.strip() for num in result_numbers])
+                            
+                            if len(result_str) == 4 and result_str.isdigit():
+                                print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result_str}")
+                                return result_str
+            
+        print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}'")
+        return None
+
     except requests.exceptions.RequestException as e:
-        print(f"Error saat mengakses URL untuk {pasaran}: {e}")
+        print(f"Error saat mengakses URL {ANGKANET_URL}: {e}")
     except Exception as e:
-        print(f"Error saat memproses halaman web untuk {pasaran}: {e}")
-        
+        print(f"Terjadi error tak terduga saat memproses halaman: {e}")
+    
     return None
 
 # V V V V V (TIDAK ADA PERUBAHAN PADA FUNGSI DI BAWAH INI) V V V V V
