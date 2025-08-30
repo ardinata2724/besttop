@@ -538,6 +538,3 @@ with tab_angka_main:
             st.markdown(f"**Colok Bebas:**")
             st.code(stats['colok_bebas'])
     st.info("Angka di atas adalah hasil analisis statistik dari data historis dan bukan jaminan hasil.")
-
-}
-masih error
