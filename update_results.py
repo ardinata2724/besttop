@@ -16,7 +16,7 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-# ===== LOGIKA BARU UNTUK MEMBACA ANGKANET =====
+# Konfigurasi untuk Web Scraping dari Angkanet
 ANGKANET_URL = "https://angkanet.tv/"
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
@@ -33,9 +33,8 @@ WEB_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
-# --- FUNGSI get_latest_result DIBAWAH INI TELAH DIPERBAIKI TOTAL ---
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru dari Angkanet dengan logika pencarian yang lebih andal."""
+    """Mengambil hasil terbaru dari Angkanet dengan logika pencarian yang andal."""
     pasaran_lower = pasaran.lower()
     if pasaran_lower not in ANGKANET_MARKET_NAMES:
         print(f"Pasaran '{pasaran}' tidak dikonfigurasi untuk Angkanet. Dilewati.")
@@ -49,7 +48,6 @@ def get_latest_result(pasaran):
         response.raise_for_status()
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Logika baru: Mencari semua tabel di halaman
         tables = soup.find_all('table')
         if not tables:
             print("Tidak ada tabel ditemukan di halaman.")
@@ -59,17 +57,13 @@ def get_latest_result(pasaran):
             rows = table.find_all('tr')
             for row in rows:
                 cells = row.find_all('td')
-                # Memastikan baris memiliki setidaknya 3 kolom (Market, Tanggal, Keluaran)
                 if len(cells) > 2:
-                    market_cell = cells[0].find('a') # Nama market biasanya dalam tag <a>
-                    if market_cell:
-                        current_market_name = market_cell.text.strip()
-                        # Memeriksa apakah nama market yang kita cari ada di baris ini
+                    market_cell_tag = cells[0].find('a')
+                    if market_cell_tag:
+                        current_market_name = market_cell_tag.text.strip()
                         if market_name_to_find.lower() in current_market_name.lower():
-                            # Kolom ketiga (index 2) berisi angka keluaran
                             result_cell = cells[2]
-                            result_numbers = result_cell.find_all('b') # Angka ada di dalam tag <b>
-                            
+                            result_numbers = result_cell.find_all('b')
                             result_str = "".join([num.text.strip() for num in result_numbers])
                             
                             if len(result_str) == 4 and result_str.isdigit():
@@ -86,7 +80,6 @@ def get_latest_result(pasaran):
     
     return None
 
-# V V V V V (TIDAK ADA PERUBAHAN PADA FUNGSI DI BAWAH INI) V V V V V
 def update_file(filename, new_result):
     """Membaca file, memeriksa duplikat, dan menambahkan hasil baru jika belum ada."""
     if not os.path.exists(filename):
