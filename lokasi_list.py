@@ -58,7 +58,7 @@ lokasi_list = sorted(set([
     "TEXAS EVENING",
     "TEXAS MORNING", 
     "TEXAS NIGHT", 
-     "TOTO MACAU 00:00",
+    "TOTO MACAU 00:00",
     "TOTO MACAU 13:00", 
     "TOTO MACAU 16:00", 
     "TOTO MACAU 19:00",
