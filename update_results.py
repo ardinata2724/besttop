@@ -1,10 +1,9 @@
 import os
-import time
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 # --- KONFIGURASI ---
@@ -20,23 +19,25 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-ANGKANET_URL = "http://159.223.64.48/rumus-lengkap/"
-ANGKANET_DROPDOWN_VALUES = {
-    'hongkongpools': 'hongkong-pools',
-    'hongkong': 'hongkong-pools',
-    'sydneypools': 'sydney-pools',
-    'sydney': 'sydney-pools',
-    'singapore': 'singapore-pools',
-    'bullseye': 'bullseye',
-    'moroccoquatro21': 'morocco-quatro-21-00-wib',
-    'moroccoquatro18': 'morocco-quatro-18-00-wib',
-    'moroccoquatro00': 'morocco-quatro-00-00-wib',
+ANGKANET_URL = "http://159.223.64.48/"
+ANGKANET_MARKET_NAMES = {
+    'hongkongpools': 'Hongkong Pools',
+    'hongkong': 'Hongkong Lotto',
+    'sydneypools': 'Sydneypools',
+    'sydney': 'Sydney Lotto',
+    'singapore': 'SGP | Singapore',
+    'bullseye': 'Bullseye',
+    'moroccoquatro21': 'Morocco Quatro 21:00 Wib',
+    'moroccoquatro18': 'Morocco Quatro 18:00 Wib',
+    'moroccoquatro00': 'Morocco Quatro 00:00 Wib',
 }
 
 driver = None
+page_soup = None
 
-def setup_driver():
-    global driver
+def setup_driver_and_get_soup():
+    """Menyiapkan driver, mengunjungi URL, dan mengembalikan objek soup."""
+    global driver, page_soup
     if driver is None:
         try:
             print("Menyiapkan driver Selenium...")
@@ -46,60 +47,55 @@ def setup_driver():
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--window-size=1920,1080")
             driver = webdriver.Chrome(options=options)
-            print("Driver Selenium siap.")
+            print(f"Driver Selenium siap. Mengunjungi {ANGKANET_URL}...")
+            
+            driver.get(ANGKANET_URL)
+            wait = WebDriverWait(driver, 30)
+            wait.until(EC.presence_of_element_located((By.ID, "myTable")))
+            print("Tabel utama ditemukan.")
+            
+            html = driver.page_source
+            page_soup = BeautifulSoup(html, 'html.parser')
+
         except Exception as e:
-            print(f"Error saat menyiapkan driver: {e}")
+            print(f"Error fatal saat menyiapkan Selenium atau mengambil halaman: {e}")
+            if driver:
+                driver.quit()
             driver = None
 
 def get_latest_result(pasaran):
-    if driver is None: return None
+    """Mengambil hasil terbaru dari HTML yang sudah diambil."""
+    if page_soup is None: return None
+    
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in ANGKANET_DROPDOWN_VALUES:
-        return None
-
+    if pasaran_lower not in ANGKANET_MARKET_NAMES: return None
+    market_name_to_find = ANGKANET_MARKET_NAMES[pasaran_lower]
+    
     try:
-        print(f"Mengunjungi URL: {ANGKANET_URL}")
-        driver.get(ANGKANET_URL)
-        wait = WebDriverWait(driver, 30)
-        
-        # ===== PERBAIKAN FINAL DI SINI =====
-        # Memberi jeda 5 detik agar semua skrip di halaman selesai dimuat
-        print("Memberi jeda 5 detik agar halaman stabil...")
-        time.sleep(5)
-        
-        dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Mencari dropdown dan memilih '{dropdown_value}'...")
-        # Menggunakan kondisi tunggu yang lebih baik: visibility_of_element_located
-        select_element = wait.until(EC.visibility_of_element_located((By.NAME, "pasaran")))
-        Select(select_element).select_by_value(dropdown_value)
-        print("Dropdown berhasil dipilih.")
-        
-        print("Mencari dan menekan tombol 'Go' dengan JavaScript...")
-        go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
-        driver.execute_script("arguments[0].click();", go_button)
-        print("Tombol 'Go' berhasil ditekan.")
+        table = page_soup.find('table', id='myTable')
+        rows = table.find('tbody').find_all('tr')
 
-        print("Menunggu tabel hasil...")
-        result_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-hover")))
+        for row in rows:
+            cells = row.find_all('td')
+            if len(cells) > 2:
+                # Mengambil teks dari tombol dropdown di sel pertama
+                button = cells[0].find('button')
+                if button:
+                    current_market_name = button.text.strip()
+                    if market_name_to_find.lower() in current_market_name.lower():
+                        result_cell = cells[2]
+                        span_tags = result_cell.find_all('span', class_='rescir')
+                        result_str = "".join([span.text.strip() for span in span_tags])
+                        
+                        if len(result_str) == 4 and result_str.isdigit():
+                            print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result_str}")
+                            return result_str
         
-        html = result_table.get_attribute('outerHTML')
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        first_row = soup.find('tbody').find('tr')
-        if not first_row:
-            return None
-
-        cells = first_row.find_all('td')
-        if len(cells) > 1:
-            result = cells[1].text.strip()
-            if len(result) == 4 and result.isdigit():
-                print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
-                return result
-        
+        print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}'.")
         return None
 
     except Exception as e:
-        print(f"Terjadi error: {e}")
+        print(f"Terjadi error saat parsing tabel: {e}")
     return None
 
 def update_file(filename, new_result):
@@ -119,9 +115,11 @@ def update_file(filename, new_result):
 def main():
     wib = timezone(timedelta(hours=7))
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
-    setup_driver()
+    
+    setup_driver_and_get_soup()
+    
     any_file_updated = False
-    if driver:
+    if page_soup and driver:
         for pasaran, filename in PASARAN_FILES.items():
             print(f"\nMemproses pasaran: {pasaran.capitalize()}")
             latest_result = get_latest_result(pasaran)
@@ -129,6 +127,7 @@ def main():
                 if update_file(filename, latest_result): any_file_updated = True
             else: print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran}.")
         driver.quit()
+        
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
         print("Tidak ada file yang diperbarui. Keluar.")
