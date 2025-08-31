@@ -1,6 +1,8 @@
 name: Update Daily Results
 
 on:
+  schedule:
+    - cron: '0 18 * * *'
   workflow_dispatch:
 
 jobs:
@@ -22,13 +24,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install selenium beautifulsoup4
+          pip install -r requirements.txt
 
-      - name: Run Debug Script to Capture HTML
+      - name: Run update script
         run: python update_results.py
 
-      - name: Upload Debug Artifact
-        uses: actions/upload-artifact@v4
+      - name: Commit and push if there are changes
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          name: debug-html
-          path: debug_page_source.html
+          commit_message: "BOT: Auto-update result files"
+          branch: main
