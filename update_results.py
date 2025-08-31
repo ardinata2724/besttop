@@ -21,6 +21,7 @@ PASARAN_FILES = {
 }
 
 # Kamus untuk mencocokkan nama internal kita dengan nama lengkap di website
+# ===== NAMA PASARAN MAROKO SUDAH DIPERBAIKI DI SINI =====
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
     'hongkong': 'Hongkong Lotto',
@@ -30,7 +31,7 @@ ANGKANET_MARKET_NAMES = {
     'bullseye': 'Bullseye',
     'moroccoquatro21': 'Morocco Quatro 21:00 Wib',
     'moroccoquatro18': 'Morocco Quatro 18:00 Wib',
-    'moroccoquatro00': 'Morocco Quatro 00:00 Wib',
+    'moroccoquatro00': 'Morocco Quatro 23:59 Wib', # Diperbaiki dari 00:00 menjadi 23:59
 }
 
 # --- PETA URL UNTUK SETIAP PASARAN (SEKARANG LENGKAP) ---
