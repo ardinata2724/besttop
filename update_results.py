@@ -22,7 +22,9 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-ANGKANET_URL = "https://www.angkanet.org/"
+# ===== PERBAIKAN FINAL: Menggunakan ALAMAT WEBSITE YANG BENAR =====
+ANGKANET_URL = "https://angkanet.top/"
+
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
     'hongkong': 'Hongkong Pools',
@@ -47,7 +49,7 @@ def setup_driver():
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--window-size=1920,1080") # Menambah ukuran window
+            options.add_argument("--window-size=1920,1080")
             driver = webdriver.Chrome(options=options)
             print("Driver Selenium siap.")
         except Exception as e:
@@ -66,9 +68,7 @@ def get_latest_result(pasaran):
             print(f"Mengunjungi URL: {ANGKANET_URL}")
             driver.get(ANGKANET_URL)
         
-        # Menunggu lebih lama (30 detik)
         wait = WebDriverWait(driver, 30)
-        # Menunggu elemen yang lebih spesifik, yaitu <tbody> dari tabel
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "tbody")))
         
         html = driver.page_source
@@ -93,7 +93,6 @@ def get_latest_result(pasaran):
 
     except TimeoutException:
         print(f"Gagal menemukan tabel dalam 30 detik. Mengambil screenshot...")
-        # ===== MODIFIKASI: Mengambil screenshot saat gagal =====
         driver.save_screenshot('debug_screenshot.png')
         print("Screenshot 'debug_screenshot.png' berhasil diambil.")
     except Exception as e:
