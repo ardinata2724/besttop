@@ -12,9 +12,9 @@ PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
     'singapore': 'keluaran singapura.txt', 'bullseye': 'keluaran bullseye.txt',
-    'moroccoquatro18': 'keluaran morocco quatro 18.00 wib.txt',
-    'moroccoquatro21': 'keluaran morocco quatro 21.00 wib.txt',
-    'moroccoquatro23.59': 'keluaran morocco quatro 23.59 wib.txt',
+    'moroccoquatro18': 'keluaran morocco quatro 18:00 wib.txt',
+    'moroccoquatro21': 'keluaran morocco quatro 21:00 wib.txt',
+    'moroccoquatro23.59': 'keluaran morocco quatro 23:59 wib.txt',
 }
 ANGKANET_URL = "http://159.223.64.48/rumus-lengkap/"
 ANGKANET_DROPDOWN_VALUES = {
