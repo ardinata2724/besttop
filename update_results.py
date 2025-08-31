@@ -35,7 +35,6 @@ ANGKANET_MARKET_NAMES = {
     'moroccoquatro00': 'Morocco Quatro 00.00 Wib',
 }
 
-# Inisialisasi driver browser Selenium (hanya sekali)
 driver = None
 
 def setup_driver():
@@ -48,6 +47,7 @@ def setup_driver():
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("--window-size=1920,1080") # Menambah ukuran window
             driver = webdriver.Chrome(options=options)
             print("Driver Selenium siap.")
         except Exception as e:
@@ -56,32 +56,24 @@ def setup_driver():
 
 def get_latest_result(pasaran):
     """Mengambil hasil terbaru menggunakan Selenium."""
-    if driver is None:
-        print("Driver Selenium tidak tersedia. Melewati.")
-        return None
-
+    if driver is None: return None
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in ANGKANET_MARKET_NAMES:
-        print(f"Pasaran '{pasaran}' tidak dikonfigurasi. Dilewati.")
-        return None
-
+    if pasaran_lower not in ANGKANET_MARKET_NAMES: return None
     market_name_to_find = ANGKANET_MARKET_NAMES[pasaran_lower]
     
     try:
-        # Kunjungi halaman hanya jika belum dikunjungi
         if driver.current_url != ANGKANET_URL:
             print(f"Mengunjungi URL: {ANGKANET_URL}")
             driver.get(ANGKANET_URL)
         
-        # Menunggu tabel utama untuk muncul, maksimal 15 detik
-        wait = WebDriverWait(driver, 15)
-        table_element = wait.until(EC.presence_of_element_located((By.XPATH, "//table")))
+        # Menunggu lebih lama (30 detik)
+        wait = WebDriverWait(driver, 30)
+        # Menunggu elemen yang lebih spesifik, yaitu <tbody> dari tabel
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "tbody")))
         
-        # Mengambil HTML setelah JavaScript berjalan
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Logika parsing yang sama seperti sebelumnya
         rows = soup.find_all('tr')
         for row in rows:
             cells = row.find_all('td')
@@ -96,51 +88,46 @@ def get_latest_result(pasaran):
                         if len(result_str) == 4 and result_str.isdigit():
                             print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result_str}")
                             return result_str
-        
         print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}'")
         return None
 
     except TimeoutException:
-        print(f"Gagal menemukan tabel dalam 15 detik. Halaman mungkin lambat atau berubah.")
+        print(f"Gagal menemukan tabel dalam 30 detik. Mengambil screenshot...")
+        # ===== MODIFIKASI: Mengambil screenshot saat gagal =====
+        driver.save_screenshot('debug_screenshot.png')
+        print("Screenshot 'debug_screenshot.png' berhasil diambil.")
     except Exception as e:
         print(f"Terjadi error tak terduga saat proses Selenium: {e}")
-    
+        driver.save_screenshot('debug_screenshot.png')
+        print("Screenshot 'debug_screenshot.png' berhasil diambil karena error.")
     return None
 
 def update_file(filename, new_result):
     if not os.path.exists(filename):
-        print(f"File {filename} tidak ditemukan. Membuat file baru.")
         existing_results = set()
     else:
         with open(filename, 'r', encoding='utf-8') as f:
             existing_results = set(line.strip() for line in f if line.strip())
     if new_result not in existing_results:
-        print(f"Hasil baru ditemukan untuk {filename}: {new_result}. Menambahkan ke file.")
         with open(filename, 'a', encoding='utf-8') as f:
             f.write(f"\n{new_result}")
         return True
     else:
-        print(f"Hasil {new_result} sudah ada di {filename}. Tidak ada perubahan.")
         return False
 
 def main():
     wib = timezone(timedelta(hours=7))
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
-    
-    setup_driver() # Menyiapkan browser sebelum loop
-    
+    setup_driver()
     any_file_updated = False
     if driver:
         for pasaran, filename in PASARAN_FILES.items():
             print(f"\nMemproses pasaran: {pasaran.capitalize()}")
             latest_result = get_latest_result(pasaran)
             if latest_result:
-                if update_file(filename, latest_result):
-                    any_file_updated = True
-            else:
-                print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran}.")
-        driver.quit() # Menutup browser setelah selesai
-    
+                if update_file(filename, latest_result): any_file_updated = True
+            else: print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran}.")
+        driver.quit()
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
         print("Tidak ada file yang diperbarui. Keluar.")
