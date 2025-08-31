@@ -1,43 +1,57 @@
 import os
+import time
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import re
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt',
-    'hongkong lotto': 'keluaran hongkong lotto.txt',
+    'hongkong': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt',
-    'sydney lotto': 'keluaran sydney lotto.txt',
+    'sydney': 'keluaran sydney lotto.txt',
     'singapore': 'keluaran singapura.txt',
     'bullseye': 'keluaran bullseye.txt',
-    'moroccoquatro18': 'keluaran morocco quatro 18:00.txt',
-    'moroccoquatro21': 'keluaran morocco quatro 21:00.txt',
-    'moroccoquatro00': 'keluaran morocco quatro 23:59.txt',
+    'moroccoquatro 18:00': 'keluaran morocco quatro 18:00.txt',
+    'moroccoquatro 21:00': 'keluaran morocco quatro 21:00.txt',
+    'moroccoquatro 23:59': 'keluaran morocco quatro 23:59.txt',
 }
 
-ANGKANET_URL = "http://159.223.64.48/"
+# Kamus untuk mencocokkan nama pasaran kita dengan nama di website
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
-    'hongkong lotto': 'Hongkong Lotto',
+    'hongkong': 'Hongkong Lotto',
     'sydneypools': 'Sydneypools',
-    'sydney lotto': 'Sydney Lotto',
+    'sydney': 'Sydney Lotto',
     'singapore': 'SGP | Singapore',
     'bullseye': 'Bullseye',
-    'moroccoquatro 21:00': 'Morocco Quatro 21:00 Wib',
     'moroccoquatro 18:00': 'Morocco Quatro 18:00 Wib',
+    'moroccoquatro 21:00': 'Morocco Quatro 21:00 Wib',
     'moroccoquatro 23:59': 'Morocco Quatro 23:59 Wib',
 }
 
-driver = None
-page_soup = None
+# --- PETA URL UNTUK SETIAP PASARAN ---
+ANGKANET_BASE_URL = "http://159.223.64.48"
+TARGET_URLS = {
+    'hongkongpools': ANGKANET_BASE_URL + '/',
+    'hongkong': ANGKANET_BASE_URL + '/',
+    'sydneypools': ANGKANET_BASE_URL + '/',
+    'sydney': ANGKANET_BASE_URL + '/',
+    'singapore': ANGKANET_BASE_URL + '/',
+    'bullseye': ANGKANET_BASE_URL + '/',
+    'moroccoquatro21': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-21-00-wib',
+    'moroccoquatro18': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-18-00-wib',
+    'moroccoquatro00': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-00-00-wib',
+}
 
-def setup_driver_and_get_soup():
-    """Menyiapkan driver, mengunjungi URL, dan mengembalikan objek soup."""
-    global driver, page_soup
+driver = None
+
+def setup_driver():
+    global driver
     if driver is None:
         try:
             print("Menyiapkan driver Selenium...")
@@ -47,66 +61,78 @@ def setup_driver_and_get_soup():
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--window-size=1920,1080")
             driver = webdriver.Chrome(options=options)
-            print(f"Driver Selenium siap. Mengunjungi {ANGKANET_URL}...")
-            
-            driver.get(ANGKANET_URL)
-            wait = WebDriverWait(driver, 30)
-            wait.until(EC.presence_of_element_located((By.ID, "myTable")))
-            print("Tabel utama ditemukan.")
-            
-            html = driver.page_source
-            page_soup = BeautifulSoup(html, 'html.parser')
-
+            print("Driver Selenium siap.")
         except Exception as e:
-            print(f"Error fatal saat menyiapkan Selenium atau mengambil halaman: {e}")
-            if driver:
-                driver.quit()
-            driver = None
+            print(f"Error saat menyiapkan driver: {e}")
+
+def _scrape_main_page(soup, market_name):
+    """Logika untuk membaca tabel di halaman utama."""
+    table = soup.find('table', id='myTable')
+    if not table: return None
+    rows = table.find('tbody').find_all('tr')
+    for row in rows:
+        cells = row.find_all('td')
+        if len(cells) > 2:
+            button = cells[0].find('button')
+            if button and market_name.lower() in button.text.strip().lower():
+                span_tags = cells[2].find_all('span', class_='rescir')
+                result_str = "".join([span.text.strip() for span in span_tags])
+                if len(result_str) == 4 and result_str.isdigit():
+                    print(f"Sukses mendapatkan hasil (halaman utama) untuk {market_name}: {result_str}")
+                    return result_str
+    return None
+
+def _scrape_rumus_page(soup):
+    """Logika untuk membaca tabel di halaman Rumus Harian."""
+    table = soup.find('table', class_='table-hover')
+    if not table: return None
+    first_row = table.find('tbody').find('tr')
+    if not first_row: return None
+    cells = first_row.find_all('td')
+    if len(cells) > 1:
+        result = cells[1].text.strip()
+        if len(result) == 4 and result.isdigit():
+            print(f"Sukses mendapatkan hasil (halaman rumus): {result}")
+            return result
+    return None
 
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru dari HTML yang sudah diambil."""
-    if page_soup is None: return None
-    
+    if driver is None: return None
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in ANGKANET_MARKET_NAMES: return None
-    market_name_to_find = ANGKANET_MARKET_NAMES[pasaran_lower]
-    
-    try:
-        table = page_soup.find('table', id='myTable')
-        rows = table.find('tbody').find_all('tr')
-
-        for row in rows:
-            cells = row.find_all('td')
-            if len(cells) > 2:
-                # Mengambil teks dari tombol dropdown di sel pertama
-                button = cells[0].find('button')
-                if button:
-                    current_market_name = button.text.strip()
-                    if market_name_to_find.lower() in current_market_name.lower():
-                        result_cell = cells[2]
-                        span_tags = result_cell.find_all('span', class_='rescir')
-                        result_str = "".join([span.text.strip() for span in span_tags])
-                        
-                        if len(result_str) == 4 and result_str.isdigit():
-                            print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result_str}")
-                            return result_str
-        
-        print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}'.")
+    if pasaran_lower not in TARGET_URLS:
+        print(f"Pasaran '{pasaran}' tidak memiliki URL target. Dilewati.")
         return None
 
+    target_url = TARGET_URLS[pasaran_lower]
+    market_name_to_find = ANGKANET_MARKET_NAMES.get(pasaran_lower)
+    
+    try:
+        print(f"Mengunjungi URL: {target_url}")
+        driver.get(target_url)
+        wait = WebDriverWait(driver, 30)
+        
+        # Menentukan logika mana yang akan dipakai berdasarkan URL
+        if "/rumus-lengkap/" in target_url:
+            wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-hover")))
+            print("Halaman Rumus terdeteksi. Membaca tabel hasil...")
+            return _scrape_rumus_page(BeautifulSoup(driver.page_source, 'html.parser'))
+        else:
+            wait.until(EC.presence_of_element_located((By.ID, "myTable")))
+            print("Halaman Utama terdeteksi. Mencari pasaran di tabel...")
+            return _scrape_main_page(BeautifulSoup(driver.page_source, 'html.parser'), market_name_to_find)
+
     except Exception as e:
-        print(f"Terjadi error saat parsing tabel: {e}")
+        print(f"Terjadi error tak terduga saat memproses {pasaran}: {e}")
     return None
 
 def update_file(filename, new_result):
-    if not os.path.exists(filename):
-        existing_results = set()
+    if not os.path.exists(filename): existing_results = set()
     else:
         with open(filename, 'r', encoding='utf-8') as f:
             existing_results = set(line.strip() for line in f if line.strip())
     if new_result not in existing_results:
-        with open(filename, 'a', encoding='utf-8') as f:
-            f.write(f"\n{new_result}")
+        with open(filename, 'a', encoding='utf-8') as f: f.write(f"\n{new_result}")
+        print(f"HASIL BARU DITAMBAHKAN: {new_result} -> {filename}")
         return True
     else:
         print(f"Hasil {new_result} sudah ada di {filename}. Tidak ada perubahan.")
@@ -115,11 +141,9 @@ def update_file(filename, new_result):
 def main():
     wib = timezone(timedelta(hours=7))
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
-    
-    setup_driver_and_get_soup()
-    
+    setup_driver()
     any_file_updated = False
-    if page_soup and driver:
+    if driver:
         for pasaran, filename in PASARAN_FILES.items():
             print(f"\nMemproses pasaran: {pasaran.capitalize()}")
             latest_result = get_latest_result(pasaran)
@@ -127,7 +151,6 @@ def main():
                 if update_file(filename, latest_result): any_file_updated = True
             else: print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran}.")
         driver.quit()
-        
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
         print("Tidak ada file yang diperbarui. Keluar.")
