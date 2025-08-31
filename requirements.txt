@@ -5,6 +5,7 @@ scikit-learn
 requests
 tensorflow-cpu
 requests-html
+lxml_html_clean
 openai==0.28
 python-dotenv
 matplotlib
