@@ -4,8 +4,7 @@ numpy<2.0
 scikit-learn
 requests
 tensorflow-cpu
-beautifulsoup4
-selenium
+requests-html
 openai==0.28
 python-dotenv
 matplotlib
