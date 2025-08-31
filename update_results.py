@@ -1,14 +1,14 @@
 import os
+import time
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import re
 
 # --- KONFIGURASI ---
-# ===== NAMA FILE DAN KUNCI MAROKO SUDAH DIPERBAIKI SESUAI SCREENSHOT ANDA =====
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt',
     'hongkong': 'keluaran hongkong lotto.txt',
@@ -21,35 +21,20 @@ PASARAN_FILES = {
     'moroccoquatro23.59': 'keluaran morocco quatro 23.59 wib.txt',
 }
 
-# Kamus untuk mencocokkan nama internal kita dengan nama lengkap di website
-ANGKANET_MARKET_NAMES = {
-    'hongkongpools': 'Hongkong Pools',
-    'hongkong': 'Hongkong Lotto',
-    'sydneypools': 'Sydneypools',
-    'sydney': 'Sydney Lotto',
-    'singapore': 'SGP | Singapore',
-    'bullseye': 'Bullseye',
-    'moroccoquatro21': 'Morocco Quatro 21:00 Wib',
-    'moroccoquatro18': 'Morocco Quatro 18:00 Wib',
-    'moroccoquatro23.59': 'Morocco Quatro 23:59 Wib',
-}
-
-# --- PETA URL UNTUK SETIAP PASARAN ---
-ANGKANET_BASE_URL = "http://159.223.64.48"
-TARGET_URLS = {
-    'hongkongpools': ANGKANET_BASE_URL + '/',
-    'hongkong': ANGKANET_BASE_URL + '/',
-    'sydneypools': ANGKANET_BASE_URL + '/',
-    'sydney': ANGKANET_BASE_URL + '/',
-    'singapore': ANGKANET_BASE_URL + '/',
-    'bullseye': ANGKANET_BASE_URL + '/',
-    'moroccoquatro21': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-21-00-wib',
-    'moroccoquatro18': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-18-00-wib',
-    'moroccoquatro23.59': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-23-59-wib',
+ANGKANET_URL = "http://159.223.64.48/rumus-lengkap/"
+ANGKANET_DROPDOWN_VALUES = {
+    'hongkongpools': 'hongkong-pools',
+    'hongkong': 'hongkong-pools', # Asumsi sama
+    'sydneypools': 'sydney-pools',
+    'sydney': 'sydney-pools', # Asumsi sama
+    'singapore': 'singapore-pools',
+    'bullseye': 'bullseye',
+    'moroccoquatro21': 'morocco-quatro-21-00-wib',
+    'moroccoquatro18': 'morocco-quatro-18-00-wib',
+    'moroccoquatro23.59': 'morocco-quatro-00-00-wib', # Website menggunakan 00:00 untuk 23:59
 }
 
 driver = None
-page_soups = {} # Cache untuk menyimpan HTML dari setiap halaman yang dikunjungi
 
 def setup_driver():
     global driver
@@ -64,66 +49,50 @@ def setup_driver():
         except Exception as e:
             print(f"Error saat menyiapkan driver: {e}")
 
-def get_page_soup(url):
-    """Mengunjungi URL dan mengembalikan objek soup, menggunakan cache jika memungkinkan."""
-    global page_soups
-    if url in page_soups:
-        print(f"Menggunakan HTML dari cache untuk {url}")
-        return page_soups[url]
-    
-    if driver is None: return None
-    try:
-        print(f"Mengunjungi URL: {url}")
-        driver.get(url)
-        wait = WebDriverWait(driver, 30)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "table")))
-        print("Halaman dan tabel berhasil dimuat.")
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-        page_soups[url] = soup # Simpan ke cache
-        return soup
-    except Exception as e:
-        print(f"Gagal memuat atau menemukan tabel di {url}. Error: {e}")
-        return None
-
-def parse_result_from_soup(soup, market_name_to_find):
-    """Satu fungsi parsing yang andal untuk semua halaman."""
-    try:
-        tables = soup.find_all('table')
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                cells = row.find_all('td')
-                if len(cells) > 2:
-                    market_text = cells[0].text.strip()
-                    if market_name_to_find.lower() in market_text.lower():
-                        result_cell = cells[2]
-                        # Coba baca dari gambar dulu
-                        image_tags = result_cell.find_all('img')
-                        if image_tags:
-                            result_str = "".join(re.findall(r'N(\d)\.gif', img.get('src', '')))
-                        else: # Jika tidak ada gambar, coba baca dari span
-                            span_tags = result_cell.find_all('span', class_='rescir')
-                            result_str = "".join([span.text.strip() for span in span_tags])
-                        
-                        if len(result_str) == 4 and result_str.isdigit():
-                            print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result_str}")
-                            return result_str
-        print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}'.")
-    except Exception as e:
-        print(f"Error saat parsing tabel: {e}")
-    return None
-
 def get_latest_result(pasaran):
+    if driver is None: return None
     pasaran_lower = pasaran.lower()
-    url = TARGET_URLS.get(pasaran_lower)
-    market_name = ANGKANET_MARKET_NAMES.get(pasaran_lower)
-    if not url or not market_name:
-        print(f"Konfigurasi untuk '{pasaran}' tidak ditemukan. Dilewati.")
-        return None
+    if pasaran_lower not in ANGKANET_DROPDOWN_VALUES: return None
+
+    try:
+        print(f"Mengunjungi URL: {ANGKANET_URL}")
+        driver.get(ANGKANET_URL)
+        wait = WebDriverWait(driver, 30)
         
-    soup = get_page_soup(url)
-    if soup:
-        return parse_result_from_soup(soup, market_name)
+        # Memberi jeda agar halaman stabil
+        print("Memberi jeda 3 detik...")
+        time.sleep(3)
+        
+        dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
+        print(f"Memilih '{dropdown_value}' dari dropdown...")
+        select_element = wait.until(EC.visibility_of_element_located((By.NAME, "pasaran")))
+        Select(select_element).select_by_value(dropdown_value)
+        print("Dropdown berhasil dipilih.")
+        
+        print("Menekan tombol 'Go'...")
+        go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
+        driver.execute_script("arguments[0].click();", go_button)
+        print("Tombol 'Go' berhasil ditekan.")
+
+        print("Menunggu tabel hasil...")
+        result_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-hover")))
+        
+        html = result_table.get_attribute('outerHTML')
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        first_row = soup.find('tbody').find('tr')
+        if not first_row: return None
+
+        cells = first_row.find_all('td')
+        if len(cells) > 1:
+            result = cells[1].text.strip()
+            if len(result) == 4 and result.isdigit():
+                print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
+                return result
+        return None
+
+    except Exception as e:
+        print(f"Terjadi error saat memproses {pasaran}: {e}")
     return None
 
 def update_file(filename, new_result):
