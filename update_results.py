@@ -9,27 +9,27 @@ from selenium.webdriver.support import expected_conditions as EC
 # --- KONFIGURASI ---
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt',
-    'hongkong': 'keluaran hongkong lotto.txt',
+    'hongkong lotto': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt',
-    'sydney': 'keluaran sydney lotto.txt',
+    'sydney lotto': 'keluaran sydney lotto.txt',
     'singapore': 'keluaran singapura.txt',
     'bullseye': 'keluaran bullseye.txt',
-    'moroccoquatro18': 'keluaran morocco quatro 18.txt',
-    'moroccoquatro21': 'keluaran morocco quatro 21.txt',
-    'moroccoquatro00': 'keluaran morocco quatro 00.txt',
+    'moroccoquatro18': 'keluaran morocco quatro 18:00.txt',
+    'moroccoquatro21': 'keluaran morocco quatro 21:00.txt',
+    'moroccoquatro00': 'keluaran morocco quatro 23:59.txt',
 }
 
 ANGKANET_URL = "http://159.223.64.48/"
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
-    'hongkong': 'Hongkong Lotto',
+    'hongkong lotto': 'Hongkong Lotto',
     'sydneypools': 'Sydneypools',
-    'sydney': 'Sydney Lotto',
+    'sydney lotto': 'Sydney Lotto',
     'singapore': 'SGP | Singapore',
     'bullseye': 'Bullseye',
-    'moroccoquatro21': 'Morocco Quatro 21:00 Wib',
-    'moroccoquatro18': 'Morocco Quatro 18:00 Wib',
-    'moroccoquatro00': 'Morocco Quatro 00:00 Wib',
+    'moroccoquatro 21:00': 'Morocco Quatro 21:00 Wib',
+    'moroccoquatro 18:00': 'Morocco Quatro 18:00 Wib',
+    'moroccoquatro 23:59': 'Morocco Quatro 23:59 Wib',
 }
 
 driver = None
