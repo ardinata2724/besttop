@@ -7,7 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-import re # Import library baru untuk parsing
+import re
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
@@ -54,9 +54,8 @@ def setup_driver():
             print(f"Error saat menyiapkan driver: {e}")
             driver = None
 
-# ===== FUNGSI INI TELAH DIPERBAIKI UNTUK MEMBACA GAMBAR =====
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru menggunakan Selenium dan membaca angka dari gambar."""
+    """Mengambil hasil terbaru menggunakan Selenium."""
     if driver is None: return None
     pasaran_lower = pasaran.lower()
     if pasaran_lower not in ANGKANET_MARKET_NAMES: return None
@@ -69,7 +68,6 @@ def get_latest_result(pasaran):
         
         wait = WebDriverWait(driver, 30)
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "tbody")))
-        
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
         
@@ -77,36 +75,33 @@ def get_latest_result(pasaran):
         for row in rows:
             cells = row.find_all('td')
             if len(cells) > 2:
-                market_cell_tag = cells[0].find('a')
-                if market_cell_tag:
-                    current_market_name = market_cell_tag.text.strip()
-                    if market_name_to_find.lower() in current_market_name.lower():
-                        result_cell = cells[2]
-                        # MODIFIKASI: Cari semua tag <img> di dalam sel hasil
-                        image_tags = result_cell.find_all('img')
-                        result_str = ""
-                        for img in image_tags:
-                            # Ambil angka dari nama file gambar (misal: src='.../N4.gif' -> ambil '4')
-                            src = img.get('src', '')
-                            angka = re.search(r'N(\d)\.gif', src)
-                            if angka:
-                                result_str += angka.group(1)
-                        
-                        if len(result_str) == 4 and result_str.isdigit():
-                            print(f"Sukses mendapatkan hasil untuk {market_name_to_find} dari gambar: {result_str}")
-                            return result_str
+                # ===== PERBAIKAN FINAL DI SINI =====
+                # Mengambil semua teks dari sel pertama, bukan hanya yang berupa link
+                current_market_name = cells[0].text.strip()
+                
+                if market_name_to_find.lower() in current_market_name.lower():
+                    result_cell = cells[2]
+                    image_tags = result_cell.find_all('img')
+                    result_str = ""
+                    for img in image_tags:
+                        src = img.get('src', '')
+                        angka = re.search(r'N(\d)\.gif', src)
+                        if angka:
+                            result_str += angka.group(1)
+                    
+                    if len(result_str) == 4 and result_str.isdigit():
+                        print(f"Sukses mendapatkan hasil untuk {market_name_to_find} dari gambar: {result_str}")
+                        return result_str
         
         print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}' setelah memeriksa semua baris.")
         return None
 
     except TimeoutException:
-        print(f"Gagal menemukan tabel dalam 30 detik. Halaman mungkin lambat atau berubah.")
+        print(f"Gagal menemukan tabel dalam 30 detik.")
     except Exception as e:
-        print(f"Terjadi error tak terduga saat proses Selenium: {e}")
-    
+        print(f"Terjadi error tak terduga: {e}")
     return None
 
-# V V V V V (TIDAK ADA PERUBAHAN PADA FUNGSI DI BAWAH INI) V V V V V
 def update_file(filename, new_result):
     if not os.path.exists(filename):
         existing_results = set()
