@@ -23,7 +23,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # LANGKAH DIAGNOSTIK BARU
       - name: Display Script Content for Debugging
         run: |
           echo "+++ MENAMPILKAN ISI DARI update_results.py YANG DILIHAT OLEH RUNNER +++"
