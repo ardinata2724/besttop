@@ -335,14 +335,15 @@ with tab_scan:
     
     def create_scan_button(label, container):
         if container.button(f"🔎 Scan {label.replace('_', ' ').upper()}", key=f"scan_{label}", use_container_width=True, disabled=(min_ws >= max_ws)):
-            if len(df) < max_ws + 10: st.error(f"Data tidak cukup.")
+            if len(df) < max_ws + 10:
+                st.error(f"Data tidak cukup.")
             else:
                 # ===== PENAMBAHAN NOTIFIKASI DI SINI =====
-                st.toast(f"Memulai proses scan untuk {label.replace('_', ' ').upper()}...", icon="⏳")
-                with st.spinner(f"Memindai {label.upper()}... Ini bisa memakan waktu beberapa menit."):
-                    best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit, jumlah_digit_shio)
-                    st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
-                    st.rerun()
+                st.toast(f"Memulai scan untuk {label.replace('_', ' ').upper()}...", icon="⏳")
+                # Dihapus with st.spinner agar progress bar di dalam fungsi bisa terlihat
+                best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit, jumlah_digit_shio)
+                st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
+                st.rerun()
 
     category_tabs = st.tabs(["Digit", "Jumlah", "BBFS", "Shio", "Jalur Main"])
     with category_tabs[0]:
