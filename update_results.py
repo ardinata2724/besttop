@@ -21,7 +21,7 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-ANGKANET_URL = "https://angkanet.top/"
+ANGKANET_URL = "http://159.223.64.48/"
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
     'hongkong': 'Hongkong Pools',
