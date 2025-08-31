@@ -7,5 +7,5 @@ tensorflow-cpu==2.15.0
 keras==2.15.0
 protobuf==3.20.3
 beautifulsoup4
-undetected-chromedriver
+selenium
 lxml_html_clean
