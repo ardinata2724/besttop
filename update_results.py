@@ -8,6 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import re
 
 # --- KONFIGURASI ---
+# ===== NAMA FILE MAROKO SUDAH DIPERBAIKI DI SINI =====
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt',
     'hongkong': 'keluaran hongkong lotto.txt',
@@ -15,13 +16,12 @@ PASARAN_FILES = {
     'sydney': 'keluaran sydney lotto.txt',
     'singapore': 'keluaran singapura.txt',
     'bullseye': 'keluaran bullseye.txt',
-    'moroccoquatro18': 'keluaran morocco quatro 18.txt',
-    'moroccoquatro21': 'keluaran morocco quatro 21.txt',
-    'moroccoquatro00': 'keluaran morocco quatro 00.txt',
+    'moroccoquatro18': 'keluaran morocco quatro 18.00 wib.txt',
+    'moroccoquatro21': 'keluaran morocco quatro 21.00 wib.txt',
+    'moroccoquatro23.59': 'keluaran morocco quatro 23.59 wib.txt',
 }
 
 # Kamus untuk mencocokkan nama internal kita dengan nama lengkap di website
-# ===== NAMA PASARAN MAROKO SUDAH DIPERBAIKI DI SINI =====
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
     'hongkong': 'Hongkong Lotto',
@@ -31,10 +31,10 @@ ANGKANET_MARKET_NAMES = {
     'bullseye': 'Bullseye',
     'moroccoquatro21': 'Morocco Quatro 21:00 Wib',
     'moroccoquatro18': 'Morocco Quatro 18:00 Wib',
-    'moroccoquatro00': 'Morocco Quatro 23:59 Wib', # Diperbaiki dari 00:00 menjadi 23:59
+    'moroccoquatro23.59': 'Morocco Quatro 23:59 Wib',
 }
 
-# --- PETA URL UNTUK SETIAP PASARAN (SEKARANG LENGKAP) ---
+# --- PETA URL UNTUK SETIAP PASARAN ---
 ANGKANET_BASE_URL = "http://159.223.64.48"
 TARGET_URLS = {
     'hongkongpools': ANGKANET_BASE_URL + '/',
@@ -45,7 +45,7 @@ TARGET_URLS = {
     'bullseye': ANGKANET_BASE_URL + '/',
     'moroccoquatro21': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-21-00-wib',
     'moroccoquatro18': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-18-00-wib',
-    'moroccoquatro00': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-00-00-wib',
+    'moroccoquatro23.59': ANGKANET_BASE_URL + '/rumus-lengkap/?pasaran=morocco-quatro-23-59-wib',
 }
 
 driver = None
