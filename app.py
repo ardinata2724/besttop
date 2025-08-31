@@ -172,14 +172,16 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n):
         results.append(list(np.mean(pred, axis=0).argsort()[-top_n:][::-1]))
     return results, None
 
+# ===== FUNGSI INI DIMODIFIKASI UNTUK MENGEMBALIKAN TOP 3 =====
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
     from sklearn.model_selection import train_test_split
     from tensorflow.keras.callbacks import EarlyStopping
     from tensorflow.keras.metrics import TopKCategoricalAccuracy
-    best_ws, best_score, table_data = None, -1, []
-    is_jalur_scan = label in JALUR_LABELS
     
-    # ===== PERBAIKAN LOGIKA DIMULAI DI SINI =====
+    all_scores = [] # Menyimpan semua skor (skor, ws)
+    table_data = []
+    is_jalur_scan = label in JALUR_LABELS
+
     if is_jalur_scan:
         pt, k, nc = "jalur_multiclass", 2, 3
         cols = ["Window Size", "Prediksi", "Angka Jalur"]
@@ -189,11 +191,10 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     elif label in SHIO_LABELS:
         pt, k, nc = "shio", top_n_shio, 12
         cols = ["Window Size", f"Top-{k}"]
-    else: # Mencakup DIGIT_LABELS dan JUMLAH_LABELS
+    else:
         pt, k, nc = "multiclass", top_n, 10
         cols = ["Window Size", f"Top-{k}"]
-    # ===== PERBAIKAN LOGIKA SELESAI DI SINI =====
-
+        
     bar = st.progress(0.0, text=f"Scan {label.upper()}...")
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
         bar.progress((i + 1) / (max_ws - min_ws + 1), text=f"Mencoba WS={ws}...")
@@ -208,6 +209,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             model.compile(optimizer="adam", loss=loss, metrics=metrics)
             model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
             evals = model.evaluate(X_val, y_val, verbose=0); preds = model.predict(X_val, verbose=0)
+            
             if is_jalur_scan:
                 top_indices = np.argsort(preds[-1])[::-1][:2]; pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
                 angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"
@@ -217,10 +219,17 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 pred_str = ", ".join(map(str, top_indices + 1)) if pt == "shio" else ", ".join(map(str, top_indices))
                 score = (evals[1] * 0.7) + (avg_conf/100*0.3) if pt=='multilabel' else (evals[1]*0.2)+(evals[2]*0.5)+(avg_conf/100*0.3)
                 table_data.append((ws, pred_str))
-            if score > best_score: best_score, best_ws = score, ws
+            
+            all_scores.append((score, ws)) # Tambahkan skor dan ws ke daftar
         except Exception as e: st.warning(f"Gagal di WS={ws}: {e}"); continue
+    
     bar.empty()
-    return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
+    
+    # Urutkan skor dari tertinggi ke terendah dan ambil top 3 ws
+    all_scores.sort(key=lambda x: x[0], reverse=True)
+    top_3_ws = [ws for score, ws in all_scores[:3]]
+    
+    return top_3_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
 
 def train_and_save_model(df, lokasi, window_dict, model_type):
     from sklearn.model_selection import train_test_split
@@ -343,7 +352,6 @@ with tab_scan:
                 st.error(f"Data tidak cukup.")
             else:
                 st.toast(f"Memulai scan untuk {label.replace('_', ' ').upper()}...", icon="⏳")
-                # Dihapus with st.spinner agar progress bar di dalam fungsi bisa terlihat
                 best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit, jumlah_digit_shio)
                 st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
                 st.rerun()
@@ -371,8 +379,14 @@ with tab_scan:
             result_df = data.get("table")
             if result_df is not None and not result_df.empty:
                 st.dataframe(result_df)
-                if data["ws"] is not None: st.success(f"✅ WS terbaik: {data['ws']}")
-            else: st.warning("Tidak ada hasil untuk rentang WS ini.")
+                # ===== TAMPILAN HASIL DIMODIFIKASI DI SINI =====
+                top_ws_list = data.get("ws")
+                if top_ws_list:
+                    # Membuat format multiline untuk ditampilkan dalam satu box st.success
+                    display_string = "\n".join([f"✅ WS terbaik: {ws}" for ws in top_ws_list])
+                    st.success(display_string)
+            else:
+                st.warning("Tidak ada hasil untuk rentang WS ini.")
 
 with tab_angka_main:
     st.subheader("Analisis Angka Main dari Data Historis")
