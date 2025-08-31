@@ -7,6 +7,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+import re # Import library baru untuk parsing
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
@@ -53,8 +54,9 @@ def setup_driver():
             print(f"Error saat menyiapkan driver: {e}")
             driver = None
 
+# ===== FUNGSI INI TELAH DIPERBAIKI UNTUK MEMBACA GAMBAR =====
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru menggunakan Selenium dengan logging detail."""
+    """Mengambil hasil terbaru menggunakan Selenium dan membaca angka dari gambar."""
     if driver is None: return None
     pasaran_lower = pasaran.lower()
     if pasaran_lower not in ANGKANET_MARKET_NAMES: return None
@@ -66,53 +68,45 @@ def get_latest_result(pasaran):
             driver.get(ANGKANET_URL)
         
         wait = WebDriverWait(driver, 30)
-        print("Menunggu tabel (tbody) untuk muncul...")
         wait.until(EC.presence_of_element_located((By.TAG_NAME, "tbody")))
-        print("Tabel ditemukan. Memproses HTML...")
         
         html = driver.page_source
         soup = BeautifulSoup(html, 'html.parser')
         
         rows = soup.find_all('tr')
-        print(f"Menemukan total {len(rows)} baris (tr) di halaman.")
-        
-        for i, row in enumerate(rows):
+        for row in rows:
             cells = row.find_all('td')
-            # ===== LOGGING DETAIL DIMULAI DI SINI =====
-            print(f"  -- Memeriksa baris #{i+1}...")
             if len(cells) > 2:
                 market_cell_tag = cells[0].find('a')
                 if market_cell_tag:
                     current_market_name = market_cell_tag.text.strip()
-                    print(f"     -> Teks kolom market ditemukan: '{current_market_name}'")
-                    
                     if market_name_to_find.lower() in current_market_name.lower():
-                        print(f"     -> !!! SUKSES MENCOCOKKAN DENGAN '{market_name_to_find}' !!!")
                         result_cell = cells[2]
-                        result_numbers = result_cell.find_all('b')
-                        result_str = "".join([num.text.strip() for num in result_numbers])
+                        # MODIFIKASI: Cari semua tag <img> di dalam sel hasil
+                        image_tags = result_cell.find_all('img')
+                        result_str = ""
+                        for img in image_tags:
+                            # Ambil angka dari nama file gambar (misal: src='.../N4.gif' -> ambil '4')
+                            src = img.get('src', '')
+                            angka = re.search(r'N(\d)\.gif', src)
+                            if angka:
+                                result_str += angka.group(1)
                         
                         if len(result_str) == 4 and result_str.isdigit():
-                            print(f"     -> Sukses mendapatkan hasil: {result_str}")
+                            print(f"Sukses mendapatkan hasil untuk {market_name_to_find} dari gambar: {result_str}")
                             return result_str
-                        else:
-                            print(f"     -> Gagal, format hasil tidak valid: '{result_str}'")
-                else:
-                    print(f"     -> Tidak ada tag 'a' di kolom market.")
-            else:
-                print(f"     -> Baris ini hanya memiliki {len(cells)} kolom, dilewati.")
-                
+        
         print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}' setelah memeriksa semua baris.")
         return None
 
     except TimeoutException:
-        print(f"Gagal menemukan tabel dalam 30 detik. Mengambil screenshot...")
-        driver.save_screenshot('debug_screenshot.png')
+        print(f"Gagal menemukan tabel dalam 30 detik. Halaman mungkin lambat atau berubah.")
     except Exception as e:
         print(f"Terjadi error tak terduga saat proses Selenium: {e}")
-        driver.save_screenshot('debug_screenshot.png')
+    
     return None
 
+# V V V V V (TIDAK ADA PERUBAHAN PADA FUNGSI DI BAWAH INI) V V V V V
 def update_file(filename, new_result):
     if not os.path.exists(filename):
         existing_results = set()
