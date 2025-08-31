@@ -178,10 +178,22 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     from tensorflow.keras.metrics import TopKCategoricalAccuracy
     best_ws, best_score, table_data = None, -1, []
     is_jalur_scan = label in JALUR_LABELS
-    if is_jalur_scan: pt, k, nc, cols = "jalur_multiclass", 2, 3, ["Window Size", "Prediksi", "Angka Jalur"]
-    elif label in BBFS_LABELS: pt, k, nc, cols = "multilabel", top_n, 10, ["Window Size", f"Top-{k}"]
-    elif label in SHIO_LABELS: pt, k, nc, cols = "shio", top_n_shio, 12, ["Window Size", f"Top-{k}"]
-    else: pt, k, nc, cols = "multiclass", top_n, 10, ["Window Size", f"Top-{k}"]
+    
+    # ===== PERBAIKAN LOGIKA DIMULAI DI SINI =====
+    if is_jalur_scan:
+        pt, k, nc = "jalur_multiclass", 2, 3
+        cols = ["Window Size", "Prediksi", "Angka Jalur"]
+    elif label in BBFS_LABELS:
+        pt, k, nc = "multilabel", top_n, 10
+        cols = ["Window Size", f"Top-{k}"]
+    elif label in SHIO_LABELS:
+        pt, k, nc = "shio", top_n_shio, 12
+        cols = ["Window Size", f"Top-{k}"]
+    else: # Mencakup DIGIT_LABELS dan JUMLAH_LABELS
+        pt, k, nc = "multiclass", top_n, 10
+        cols = ["Window Size", f"Top-{k}"]
+    # ===== PERBAIKAN LOGIKA SELESAI DI SINI =====
+
     bar = st.progress(0.0, text=f"Scan {label.upper()}...")
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
         bar.progress((i + 1) / (max_ws - min_ws + 1), text=f"Mencoba WS={ws}...")
