@@ -10,7 +10,7 @@ from selenium.common.exceptions import TimeoutException
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
-    'hongkongpools': 'kelurran hongkongpools.txt',
+    'hongkongpools': 'keluaran hongkongpools.txt',
     'hongkong': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt',
     'sydney': 'keluaran sydney lotto.txt',
@@ -21,10 +21,7 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-# Alamat halaman rumus
 ANGKANET_URL = "http://159.223.64.48/rumus-lengkap/"
-
-# Kamus untuk mencocokkan nama pasaran kita dengan 'value' di dropdown website
 ANGKANET_DROPDOWN_VALUES = {
     'hongkongpools': 'hongkong-pools',
     'hongkong': 'hongkong-pools',
@@ -67,24 +64,21 @@ def get_latest_result(pasaran):
     try:
         print(f"Mengunjungi URL: {ANGKANET_URL}")
         driver.get(ANGKANET_URL)
-        
         wait = WebDriverWait(driver, 20)
         
-        # 1. MEMILIH MINUMAN (Pilih pasaran dari dropdown)
         dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
         print(f"Mencari dropdown dan memilih '{dropdown_value}'...")
         select_element = wait.until(EC.presence_of_element_located((By.NAME, "pasaran")))
-        select_object = Select(select_element)
-        select_object.select_by_value(dropdown_value)
+        Select(select_element).select_by_value(dropdown_value)
         print("Dropdown berhasil dipilih.")
         
-        # 2. MENEKAN TOMBOL "GO"
-        print("Mencari dan menekan tombol 'Go'...")
-        go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
-        go_button.click()
+        # ===== PERBAIKAN FINAL DI SINI =====
+        # Menggunakan JavaScript untuk menekan tombol, lebih andal
+        print("Mencari dan menekan tombol 'Go' dengan JavaScript...")
+        go_button = wait.until(EC.presence_of_element_located((By.NAME, "patah")))
+        driver.execute_script("arguments[0].click();", go_button)
         print("Tombol 'Go' berhasil ditekan.")
 
-        # 3. MENUNGGU MINUMAN KELUAR (Tunggu tabel data muncul)
         print("Menunggu tabel hasil...")
         result_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-hover")))
         
@@ -107,7 +101,7 @@ def get_latest_result(pasaran):
         return None
 
     except Exception as e:
-        print(f"Terjadi error tak terduga: {e}")
+        print(f"Terjadi error: {e}")
     return None
 
 def update_file(filename, new_result):
