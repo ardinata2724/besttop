@@ -13,7 +13,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # LANGKAH BARU: Menginstal Google Chrome untuk Selenium
       - name: Set up Chrome
         uses: browser-actions/setup-chrome@v1
 
@@ -35,3 +34,11 @@ jobs:
         with:
           commit_message: "BOT: Auto-update result files"
           branch: main
+
+      # LANGKAH BARU: Untuk menyimpan screenshot jika ada
+      - name: Upload Debug Screenshot
+        uses: actions/upload-artifact@v4
+        if: failure() # Jalankan hanya jika langkah sebelumnya gagal
+        with:
+          name: debug-screenshot
+          path: debug_screenshot.png
