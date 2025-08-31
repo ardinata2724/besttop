@@ -12,3 +12,4 @@ matplotlib
 streamlit_lottie
 seaborn
 catboost
+lxml_html_clean
