@@ -16,11 +16,8 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-# ===== PERBAIKAN FINAL DI SINI =====
-# URL target utama tempat semua data berada
-ANGKANET_URL = "https://www.angkanet.org/" # diganti dari .tv menjadi .org
-
-# Kamus untuk mencocokkan nama pasaran kita dengan nama yang ada di Angkanet
+# URL yang sudah diperbaiki
+ANGKANET_URL = "https://www.angkanet.org/"
 ANGKANET_MARKET_NAMES = {
     'hongkongpools': 'Hongkong Pools',
     'hongkong': 'Hongkong Pools',
