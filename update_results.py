@@ -2,12 +2,12 @@ import os
 import time
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
-from selenium import webdriver
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
-# --- KONFIGURASI (Tetap sama) ---
+# --- KONFIGURASI ---
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
@@ -32,16 +32,16 @@ def setup_driver():
     global driver
     if driver is None:
         try:
-            print("Menyiapkan driver Selenium...")
-            options = webdriver.ChromeOptions()
-            options.add_argument("--headless"); options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage"); options.add_argument("--window-size=1920,1080")
-            driver = webdriver.Chrome(options=options)
-            print("Driver Selenium siap.")
+            print("Menyiapkan driver undetected-chromedriver...")
+            options = uc.ChromeOptions()
+            options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            driver = uc.Chrome(options=options)
+            print("Driver undetected-chromedriver siap.")
         except Exception as e:
             print(f"Error saat menyiapkan driver: {e}")
 
-# ===== FUNGSI INI TELAH DIPERBAIKI TOTAL DENGAN METODE JAVASCRIPT =====
 def get_latest_result(pasaran):
     if driver is None: return None
     pasaran_lower = pasaran.lower()
@@ -52,18 +52,15 @@ def get_latest_result(pasaran):
         driver.get(ANGKANET_URL)
         wait = WebDriverWait(driver, 30)
         
+        print("Memberi jeda 5 detik agar halaman stabil...")
+        time.sleep(5)
+        
         dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Mencari dropdown dan memilih '{dropdown_value}'...")
+        print(f"Memilih '{dropdown_value}' dari dropdown...")
+        select_element = wait.until(EC.visibility_of_element_located((By.NAME, "pasaran")))
+        Select(select_element).select_by_value(dropdown_value)
+        print("Dropdown berhasil dipilih.")
         
-        # Menunggu dropdown muncul di halaman
-        select_element = wait.until(EC.presence_of_element_located((By.NAME, "pasaran")))
-        
-        # PERBAIKAN FINAL: Memaksa pemilihan dropdown menggunakan JavaScript
-        js_script_select = f"arguments[0].value = '{dropdown_value}'; arguments[0].dispatchEvent(new Event('change'));"
-        driver.execute_script(js_script_select, select_element)
-        print("Dropdown berhasil dipilih via JavaScript.")
-        
-        print("Mencari dan menekan tombol 'Go'...")
         go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
         driver.execute_script("arguments[0].click();", go_button)
         print("Tombol 'Go' berhasil ditekan.")
@@ -84,13 +81,11 @@ def get_latest_result(pasaran):
                 print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
                 return result
         return None
-
     except Exception as e:
-        print(f"Terjadi error: {e}")
+        print(f"Terjadi error saat memproses {pasaran}: {e}")
     return None
 
 def update_file(filename, new_result):
-    # Fungsi ini sudah benar, tidak perlu diubah
     if not os.path.exists(filename): existing_results = set()
     else:
         with open(filename, 'r', encoding='utf-8') as f:
@@ -104,9 +99,7 @@ def update_file(filename, new_result):
         return False
 
 def main():
-    # Fungsi ini sudah benar, tidak perlu diubah
-    wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
+    wib = timezone(timedelta(hours=7)); print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
@@ -119,8 +112,7 @@ def main():
         driver.quit()
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
-        print("Tidak ada file yang diperbarui. Keluar.")
-        exit(0)
+        print("Tidak ada file yang diperbarui. Keluar."); exit(0)
 
 if __name__ == "__main__":
     main()
