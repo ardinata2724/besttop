@@ -8,7 +8,7 @@ from selenium.webdriver.support import expected_conditions as EC
 import re
 
 # --- KONFIGURASI ---
-# ===== NAMA FILE MAROKO SUDAH DIPERBAIKI DI SINI =====
+# ===== NAMA FILE DAN KUNCI MAROKO SUDAH DIPERBAIKI SESUAI SCREENSHOT ANDA =====
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt',
     'hongkong': 'keluaran hongkong lotto.txt',
