@@ -2,7 +2,16 @@ name: Update Daily Results
 
 on:
   schedule:
-    - cron: '0 18 * * *'
+    # Jam 13:30 WIB: Untuk update Bullseye & Sydney
+    - cron: '30 6 * * *'
+    # Jam 18:15 WIB: Untuk update Singapore & Morocco 18
+    - cron: '15 11 * * *'
+    # Jam 21:15 WIB: Untuk update Morocco 21
+    - cron: '15 14 * * *'
+    # Jam 23:15 WIB: Untuk update Hongkong
+    - cron: '15 16 * * *'
+    # Jam 00:15 WIB: Untuk update Morocco 00 (tengah malam)
+    - cron: '15 17 * * *'
   workflow_dispatch:
 
 jobs:
