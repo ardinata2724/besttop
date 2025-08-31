@@ -1,10 +1,13 @@
 import os
+import time
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
+import re
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
@@ -19,22 +22,27 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-ANGKANET_URL = "http://159.223.64.48/"
-ANGKANET_MARKET_NAMES = {
-    'hongkongpools': 'Hongkong Pools',
-    'hongkong': 'Hongkong Pools',
-    'sydneypools': 'Sydneypools',
-    'sydney': 'Sydney Lotto',
-    'singapore': 'SGP | Singapore',
-    'bullseye': 'Bullseye',
-    'moroccoquatro21': 'Morocco Quatro 21:00 Wib',
-    'moroccoquatro18': 'Morocco Quatro 18:00 Wib',
-    'moroccoquatro00': 'Morocco Quatro 00:00 Wib',
+# ===== PERBAIKAN: Menggunakan URL spesifik untuk setiap pasaran =====
+ANGKANET_BASE_URL = "http://159.223.64.48/"
+
+# Kamus untuk membuat URL halaman "Rumus Lengkap" untuk setiap pasaran
+# Ini akan mengarahkan robot ke halaman yang benar
+ANGKANET_PAGE_PARAMS = {
+    'hongkongpools': 'rumus-lengkap/?pasaran=hongkong-pools',
+    'hongkong': 'rumus-lengkap/?pasaran=hongkong-pools',
+    'sydneypools': 'rumus-lengkap/?pasaran=sydney-pools',
+    'sydney': 'rumus-lengkap/?pasaran=sydney-pools',
+    'singapore': 'rumus-lengkap/?pasaran=singapore-pools',
+    'bullseye': 'rumus-lengkap/?pasaran=bullseye',
+    'moroccoquatro21': 'rumus-lengkap/?pasaran=morocco-quatro-21-00-wib',
+    'moroccoquatro18': 'rumus-lengkap/?pasaran=morocco-quatro-18-00-wib',
+    'moroccoquatro00': 'rumus-lengkap/?pasaran=morocco-quatro-00-00-wib',
 }
 
 driver = None
 
 def setup_driver():
+    """Menyiapkan driver browser Selenium."""
     global driver
     if driver is None:
         try:
@@ -51,43 +59,49 @@ def setup_driver():
             driver = None
 
 def get_latest_result(pasaran):
+    """Mengambil hasil terbaru dari halaman Rumus Lengkap Angkanet."""
     if driver is None: return None
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in ANGKANET_MARKET_NAMES: return None
-    market_name_to_find = ANGKANET_MARKET_NAMES[pasaran_lower]
-    
-    try:
-        if driver.current_url != ANGKANET_URL:
-            print(f"Mengunjungi URL: {ANGKANET_URL}")
-            driver.get(ANGKANET_URL)
-        
-        wait = WebDriverWait(driver, 30)
-        wait.until(EC.presence_of_element_located((By.ID, "myTable")))
-        html = driver.page_source
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        table = soup.find('table', id='myTable')
-        rows = table.find('tbody').find_all('tr')
-
-        for row in rows:
-            cells = row.find_all('td')
-            if len(cells) > 2:
-                current_market_name = cells[0].text.strip()
-                if market_name_to_find.lower() in current_market_name.lower():
-                    result_cell = cells[2]
-                    # PERBAIKAN FINAL: Cari tag <span> dengan class 'rescir'
-                    span_tags = result_cell.find_all('span', class_='rescir')
-                    result_str = "".join([span.text.strip() for span in span_tags])
-                    
-                    if len(result_str) == 4 and result_str.isdigit():
-                        print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result_str}")
-                        return result_str
-        
-        print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}'.")
+    if pasaran_lower not in ANGKANET_PAGE_PARAMS:
+        print(f"Pasaran '{pasaran}' tidak dikonfigurasi. Dilewati.")
         return None
 
+    # Membuat URL lengkap untuk halaman rumus pasaran yang dituju
+    target_url = ANGKANET_BASE_URL + ANGKANET_PAGE_PARAMS[pasaran_lower]
+    
+    try:
+        print(f"Mengunjungi URL: {target_url}")
+        driver.get(target_url)
+        
+        # Menunggu tabel hasil (dengan class table-hover) muncul, maksimal 30 detik
+        wait = WebDriverWait(driver, 30)
+        result_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-hover")))
+        
+        html = result_table.get_attribute('outerHTML')
+        soup = BeautifulSoup(html, 'html.parser')
+        
+        # Menemukan hasil di baris pertama tabel
+        first_row = soup.find('tbody').find('tr')
+        if not first_row:
+            print("Tidak bisa menemukan baris pertama di tabel hasil.")
+            return None
+
+        # Di halaman rumus, hasil ada di kolom kedua (index 1)
+        cells = first_row.find_all('td')
+        if len(cells) > 1:
+            result = cells[1].text.strip()
+            if len(result) == 4 and result.isdigit():
+                print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
+                return result
+        
+        print(f"Tidak dapat menemukan format hasil yang benar di baris pertama.")
+        return None
+
+    except TimeoutException:
+        print(f"Gagal menemukan tabel hasil dalam 30 detik. Halaman mungkin lambat atau berubah.")
     except Exception as e:
         print(f"Terjadi error tak terduga: {e}")
+    
     return None
 
 def update_file(filename, new_result):
