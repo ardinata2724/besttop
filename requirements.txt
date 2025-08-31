@@ -6,10 +6,4 @@ requests
 tensorflow-cpu
 beautifulsoup4
 selenium
-openai==0.28
-python-dotenv
-matplotlib
-streamlit_lottie
-seaborn
-catboost
 lxml_html_clean
