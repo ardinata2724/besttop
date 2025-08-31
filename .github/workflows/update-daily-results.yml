@@ -23,25 +23,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ===== BAGIAN TES DIAGNOSTIK DIMULAI DI SINI =====
-      - name: Run diagnostic checks and script
+      # LANGKAH DIAGNOSTIK BARU
+      - name: Display Script Content for Debugging
         run: |
-          echo "--- Memulai Tes Diagnostik ---"
+          echo "+++ MENAMPILKAN ISI DARI update_results.py YANG DILIHAT OLEH RUNNER +++"
+          cat update_results.py
+          echo "--- SELESAI MENAMPILKAN ISI ---"
 
-          echo "1. Menampilkan daftar file di direktori:"
-          ls -l
-
-          echo "2. Mengecek versi Python:"
-          python --version
-
-          echo "3. Mengecek library yang terinstal:"
-          pip list
-
-          echo "4. Menjalankan skrip update_results.py:"
-          python update_results.py
-
-          echo "--- Tes Diagnostik Selesai ---"
-      # ===== BAGIAN TES DIAGNOSTIK SELESAI =====
+      - name: Run update script
+        run: python update_results.py
 
       - name: Commit and push if there are changes
         uses: stefanzweifel/git-auto-commit-action@v5
