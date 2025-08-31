@@ -6,7 +6,6 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
@@ -37,7 +36,6 @@ ANGKANET_DROPDOWN_VALUES = {
 driver = None
 
 def setup_driver():
-    """Menyiapkan driver browser Selenium."""
     global driver
     if driver is None:
         try:
@@ -54,28 +52,30 @@ def setup_driver():
             driver = None
 
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru dengan berinteraksi dengan halaman."""
     if driver is None: return None
     pasaran_lower = pasaran.lower()
     if pasaran_lower not in ANGKANET_DROPDOWN_VALUES:
-        print(f"Pasaran '{pasaran}' tidak dikonfigurasi. Dilewati.")
         return None
 
     try:
         print(f"Mengunjungi URL: {ANGKANET_URL}")
         driver.get(ANGKANET_URL)
-        wait = WebDriverWait(driver, 20)
+        wait = WebDriverWait(driver, 30)
+        
+        # ===== PERBAIKAN FINAL DI SINI =====
+        # Memberi jeda 5 detik agar semua skrip di halaman selesai dimuat
+        print("Memberi jeda 5 detik agar halaman stabil...")
+        time.sleep(5)
         
         dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
         print(f"Mencari dropdown dan memilih '{dropdown_value}'...")
-        select_element = wait.until(EC.presence_of_element_located((By.NAME, "pasaran")))
+        # Menggunakan kondisi tunggu yang lebih baik: visibility_of_element_located
+        select_element = wait.until(EC.visibility_of_element_located((By.NAME, "pasaran")))
         Select(select_element).select_by_value(dropdown_value)
         print("Dropdown berhasil dipilih.")
         
-        # ===== PERBAIKAN FINAL DI SINI =====
-        # Menggunakan JavaScript untuk menekan tombol, lebih andal
         print("Mencari dan menekan tombol 'Go' dengan JavaScript...")
-        go_button = wait.until(EC.presence_of_element_located((By.NAME, "patah")))
+        go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
         driver.execute_script("arguments[0].click();", go_button)
         print("Tombol 'Go' berhasil ditekan.")
 
@@ -87,7 +87,6 @@ def get_latest_result(pasaran):
         
         first_row = soup.find('tbody').find('tr')
         if not first_row:
-            print("Tidak bisa menemukan baris pertama di tabel hasil.")
             return None
 
         cells = first_row.find_all('td')
@@ -97,7 +96,6 @@ def get_latest_result(pasaran):
                 print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
                 return result
         
-        print(f"Tidak dapat menemukan format hasil yang benar.")
         return None
 
     except Exception as e:
