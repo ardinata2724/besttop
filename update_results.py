@@ -1,6 +1,5 @@
 import requests
 import os
-from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 
 # --- KONFIGURASI ---
@@ -16,9 +15,11 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-# URL yang sudah diperbaiki
-ANGKANET_URL = "https://www.angkanet.org/"
-ANGKANET_MARKET_NAMES = {
+# ===== MODIFIKASI FINAL: Menggunakan "API Tersembunyi" dari Angkanet =====
+ANGKANET_API_URL = "https://www.angkanet.org/api/livedraw"
+
+# Kamus untuk mencocokkan nama pasaran kita dengan nama di API Angkanet
+ANGKANET_API_NAMES = {
     'hongkongpools': 'Hongkong Pools',
     'hongkong': 'Hongkong Pools',
     'sydneypools': 'Sydney Pools',
@@ -29,59 +30,56 @@ ANGKANET_MARKET_NAMES = {
     'moroccoquatro18': 'Morocco Quatro 18.00 Wib',
     'moroccoquatro00': 'Morocco Quatro 00.00 Wib',
 }
+
 WEB_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Referer': 'https://www.angkanet.org/'
 }
 
+# Cache untuk menyimpan hasil API sementara agar tidak meminta berulang kali
+api_data_cache = None
+
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru dari Angkanet dengan logika pencarian yang andal."""
+    """Mengambil hasil terbaru dari API tersembunyi Angkanet."""
+    global api_data_cache
+    
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in ANGKANET_MARKET_NAMES:
-        print(f"Pasaran '{pasaran}' tidak dikonfigurasi untuk Angkanet. Dilewati.")
+    if pasaran_lower not in ANGKANET_API_NAMES:
+        print(f"Pasaran '{pasaran}' tidak dikonfigurasi untuk API Angkanet. Dilewati.")
         return None
 
-    market_name_to_find = ANGKANET_MARKET_NAMES[pasaran_lower]
-    print(f"Mencari '{market_name_to_find}' di {ANGKANET_URL}")
+    market_name_to_find = ANGKANET_API_NAMES[pasaran_lower]
     
     try:
-        response = requests.get(ANGKANET_URL, headers=WEB_HEADERS, timeout=20)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        tables = soup.find_all('table')
-        if not tables:
-            print("Tidak ada tabel ditemukan di halaman.")
-            return None
+        # Jika cache kosong, panggil API. Jika sudah ada isinya, gunakan cache.
+        if api_data_cache is None:
+            print(f"Cache kosong, mengambil data baru dari {ANGKANET_API_URL}")
+            response = requests.get(ANGKANET_API_URL, headers=WEB_HEADERS, timeout=20)
+            response.raise_for_status()
+            api_data_cache = response.json()
+        else:
+            print("Menggunakan data dari cache.")
 
-        for table in tables:
-            rows = table.find_all('tr')
-            for row in rows:
-                cells = row.find_all('td')
-                if len(cells) > 2:
-                    market_cell_tag = cells[0].find('a')
-                    if market_cell_tag:
-                        current_market_name = market_cell_tag.text.strip()
-                        if market_name_to_find.lower() in current_market_name.lower():
-                            result_cell = cells[2]
-                            result_numbers = result_cell.find_all('b')
-                            result_str = "".join([num.text.strip() for num in result_numbers])
-                            
-                            if len(result_str) == 4 and result_str.isdigit():
-                                print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result_str}")
-                                return result_str
-            
-        print(f"Tidak dapat menemukan baris yang cocok untuk '{market_name_to_find}'")
+        # Mencari data di dalam hasil JSON dari API
+        for market_data in api_data_cache:
+            if market_name_to_find.lower() in market_data.get('market', '').lower():
+                result = market_data.get('result', '').strip()
+                if len(result) == 4 and result.isdigit():
+                    print(f"Sukses mendapatkan hasil untuk {market_name_to_find}: {result}")
+                    return result
+        
+        print(f"Tidak dapat menemukan data untuk '{market_name_to_find}' di dalam respons API.")
         return None
 
     except requests.exceptions.RequestException as e:
-        print(f"Error saat mengakses URL {ANGKANET_URL}: {e}")
+        print(f"Error saat mengakses API Angkanet untuk {pasaran}: {e}")
     except Exception as e:
-        print(f"Terjadi error tak terduga saat memproses halaman: {e}")
-    
+        print(f"Terjadi error tak terduga saat memproses data API untuk {pasaran}: {e}")
+        
     return None
 
+# V V V V V (TIDAK ADA PERUBAHAN PADA FUNGSI DI BAWAH INI) V V V V V
 def update_file(filename, new_result):
-    """Membaca file, memeriksa duplikat, dan menambahkan hasil baru jika belum ada."""
     if not os.path.exists(filename):
         print(f"File {filename} tidak ditemukan. Membuat file baru.")
         existing_results = set()
@@ -99,7 +97,6 @@ def update_file(filename, new_result):
         return False
 
 def main():
-    """Fungsi utama untuk menjalankan proses pembaruan."""
     wib = timezone(timedelta(hours=7))
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     
