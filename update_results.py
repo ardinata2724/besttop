@@ -4,34 +4,26 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import Select, WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import re
 
-# --- KONFIGURASI ---
+# --- KONFIGURASI (Tetap sama) ---
 PASARAN_FILES = {
-    'hongkongpools': 'keluaran hongkongpools.txt',
-    'hongkong': 'keluaran hongkong lotto.txt',
-    'sydneypools': 'keluaran sydneypools.txt',
-    'sydney': 'keluaran sydney lotto.txt',
-    'singapore': 'keluaran singapura.txt',
-    'bullseye': 'keluaran bullseye.txt',
+    'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
+    'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
+    'singapore': 'keluaran singapura.txt', 'bullseye': 'keluaran bullseye.txt',
     'moroccoquatro18': 'keluaran morocco quatro 18.00 wib.txt',
     'moroccoquatro21': 'keluaran morocco quatro 21.00 wib.txt',
     'moroccoquatro23.59': 'keluaran morocco quatro 23.59 wib.txt',
 }
-
 ANGKANET_URL = "http://159.223.64.48/rumus-lengkap/"
 ANGKANET_DROPDOWN_VALUES = {
-    'hongkongpools': 'hongkong-pools',
-    'hongkong': 'hongkong-pools', # Asumsi sama
-    'sydneypools': 'sydney-pools',
-    'sydney': 'sydney-pools', # Asumsi sama
-    'singapore': 'singapore-pools',
-    'bullseye': 'bullseye',
+    'hongkongpools': 'hongkong-pools', 'hongkong': 'hongkong-pools',
+    'sydneypools': 'sydney-pools', 'sydney': 'sydney-pools',
+    'singapore': 'singapore-pools', 'bullseye': 'bullseye',
     'moroccoquatro21': 'morocco-quatro-21-00-wib',
     'moroccoquatro18': 'morocco-quatro-18-00-wib',
-    'moroccoquatro23.59': 'morocco-quatro-00-00-wib', # Website menggunakan 00:00 untuk 23:59
+    'moroccoquatro23.59': 'morocco-quatro-00-00-wib',
 }
 
 driver = None
@@ -49,6 +41,7 @@ def setup_driver():
         except Exception as e:
             print(f"Error saat menyiapkan driver: {e}")
 
+# ===== FUNGSI INI TELAH DIPERBAIKI TOTAL DENGAN METODE JAVASCRIPT =====
 def get_latest_result(pasaran):
     if driver is None: return None
     pasaran_lower = pasaran.lower()
@@ -59,17 +52,18 @@ def get_latest_result(pasaran):
         driver.get(ANGKANET_URL)
         wait = WebDriverWait(driver, 30)
         
-        # Memberi jeda agar halaman stabil
-        print("Memberi jeda 3 detik...")
-        time.sleep(3)
-        
         dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Memilih '{dropdown_value}' dari dropdown...")
-        select_element = wait.until(EC.visibility_of_element_located((By.NAME, "pasaran")))
-        Select(select_element).select_by_value(dropdown_value)
-        print("Dropdown berhasil dipilih.")
+        print(f"Mencari dropdown dan memilih '{dropdown_value}'...")
         
-        print("Menekan tombol 'Go'...")
+        # Menunggu dropdown muncul di halaman
+        select_element = wait.until(EC.presence_of_element_located((By.NAME, "pasaran")))
+        
+        # PERBAIKAN FINAL: Memaksa pemilihan dropdown menggunakan JavaScript
+        js_script_select = f"arguments[0].value = '{dropdown_value}'; arguments[0].dispatchEvent(new Event('change'));"
+        driver.execute_script(js_script_select, select_element)
+        print("Dropdown berhasil dipilih via JavaScript.")
+        
+        print("Mencari dan menekan tombol 'Go'...")
         go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
         driver.execute_script("arguments[0].click();", go_button)
         print("Tombol 'Go' berhasil ditekan.")
@@ -92,10 +86,11 @@ def get_latest_result(pasaran):
         return None
 
     except Exception as e:
-        print(f"Terjadi error saat memproses {pasaran}: {e}")
+        print(f"Terjadi error: {e}")
     return None
 
 def update_file(filename, new_result):
+    # Fungsi ini sudah benar, tidak perlu diubah
     if not os.path.exists(filename): existing_results = set()
     else:
         with open(filename, 'r', encoding='utf-8') as f:
@@ -109,6 +104,7 @@ def update_file(filename, new_result):
         return False
 
 def main():
+    # Fungsi ini sudah benar, tidak perlu diubah
     wib = timezone(timedelta(hours=7))
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     setup_driver()
