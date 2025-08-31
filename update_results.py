@@ -4,14 +4,13 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-import re
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
-    'hongkongpools': 'keluaran hongkongpools.txt',
+    'hongkongpools': 'kelurran hongkongpools.txt',
     'hongkong': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt',
     'sydney': 'keluaran sydney lotto.txt',
@@ -22,21 +21,20 @@ PASARAN_FILES = {
     'moroccoquatro00': 'keluaran morocco quatro 00.txt',
 }
 
-# ===== PERBAIKAN: Menggunakan URL spesifik untuk setiap pasaran =====
-ANGKANET_BASE_URL = "http://159.223.64.48/"
+# Alamat halaman rumus
+ANGKANET_URL = "http://159.223.64.48/rumus-lengkap/"
 
-# Kamus untuk membuat URL halaman "Rumus Lengkap" untuk setiap pasaran
-# Ini akan mengarahkan robot ke halaman yang benar
-ANGKANET_PAGE_PARAMS = {
-    'hongkongpools': 'rumus-lengkap/?pasaran=hongkong-pools',
-    'hongkong': 'rumus-lengkap/?pasaran=hongkong-pools',
-    'sydneypools': 'rumus-lengkap/?pasaran=sydney-pools',
-    'sydney': 'rumus-lengkap/?pasaran=sydney-pools',
-    'singapore': 'rumus-lengkap/?pasaran=singapore-pools',
-    'bullseye': 'rumus-lengkap/?pasaran=bullseye',
-    'moroccoquatro21': 'rumus-lengkap/?pasaran=morocco-quatro-21-00-wib',
-    'moroccoquatro18': 'rumus-lengkap/?pasaran=morocco-quatro-18-00-wib',
-    'moroccoquatro00': 'rumus-lengkap/?pasaran=morocco-quatro-00-00-wib',
+# Kamus untuk mencocokkan nama pasaran kita dengan 'value' di dropdown website
+ANGKANET_DROPDOWN_VALUES = {
+    'hongkongpools': 'hongkong-pools',
+    'hongkong': 'hongkong-pools',
+    'sydneypools': 'sydney-pools',
+    'sydney': 'sydney-pools',
+    'singapore': 'singapore-pools',
+    'bullseye': 'bullseye',
+    'moroccoquatro21': 'morocco-quatro-21-00-wib',
+    'moroccoquatro18': 'morocco-quatro-18-00-wib',
+    'moroccoquatro00': 'morocco-quatro-00-00-wib',
 }
 
 driver = None
@@ -59,34 +57,45 @@ def setup_driver():
             driver = None
 
 def get_latest_result(pasaran):
-    """Mengambil hasil terbaru dari halaman Rumus Lengkap Angkanet."""
+    """Mengambil hasil terbaru dengan berinteraksi dengan halaman."""
     if driver is None: return None
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in ANGKANET_PAGE_PARAMS:
+    if pasaran_lower not in ANGKANET_DROPDOWN_VALUES:
         print(f"Pasaran '{pasaran}' tidak dikonfigurasi. Dilewati.")
         return None
 
-    # Membuat URL lengkap untuk halaman rumus pasaran yang dituju
-    target_url = ANGKANET_BASE_URL + ANGKANET_PAGE_PARAMS[pasaran_lower]
-    
     try:
-        print(f"Mengunjungi URL: {target_url}")
-        driver.get(target_url)
+        print(f"Mengunjungi URL: {ANGKANET_URL}")
+        driver.get(ANGKANET_URL)
         
-        # Menunggu tabel hasil (dengan class table-hover) muncul, maksimal 30 detik
-        wait = WebDriverWait(driver, 30)
+        wait = WebDriverWait(driver, 20)
+        
+        # 1. MEMILIH MINUMAN (Pilih pasaran dari dropdown)
+        dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
+        print(f"Mencari dropdown dan memilih '{dropdown_value}'...")
+        select_element = wait.until(EC.presence_of_element_located((By.NAME, "pasaran")))
+        select_object = Select(select_element)
+        select_object.select_by_value(dropdown_value)
+        print("Dropdown berhasil dipilih.")
+        
+        # 2. MENEKAN TOMBOL "GO"
+        print("Mencari dan menekan tombol 'Go'...")
+        go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
+        go_button.click()
+        print("Tombol 'Go' berhasil ditekan.")
+
+        # 3. MENUNGGU MINUMAN KELUAR (Tunggu tabel data muncul)
+        print("Menunggu tabel hasil...")
         result_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-hover")))
         
         html = result_table.get_attribute('outerHTML')
         soup = BeautifulSoup(html, 'html.parser')
         
-        # Menemukan hasil di baris pertama tabel
         first_row = soup.find('tbody').find('tr')
         if not first_row:
             print("Tidak bisa menemukan baris pertama di tabel hasil.")
             return None
 
-        # Di halaman rumus, hasil ada di kolom kedua (index 1)
         cells = first_row.find_all('td')
         if len(cells) > 1:
             result = cells[1].text.strip()
@@ -94,14 +103,11 @@ def get_latest_result(pasaran):
                 print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
                 return result
         
-        print(f"Tidak dapat menemukan format hasil yang benar di baris pertama.")
+        print(f"Tidak dapat menemukan format hasil yang benar.")
         return None
 
-    except TimeoutException:
-        print(f"Gagal menemukan tabel hasil dalam 30 detik. Halaman mungkin lambat atau berubah.")
     except Exception as e:
         print(f"Terjadi error tak terduga: {e}")
-    
     return None
 
 def update_file(filename, new_result):
