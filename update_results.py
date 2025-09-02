@@ -27,19 +27,16 @@ def setup_driver():
     global driver
     if driver is None:
         try:
-            print("Menyiapkan driver undetected-chromedriver dengan opsi tambahan...")
+            print("Menyiapkan driver undetected-chromedriver...")
             options = uc.ChromeOptions()
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
             options.add_argument("--disable-gpu")
             options.add_argument("--window-size=1920,1200")
-            options.add_argument("--ignore-certificate-errors")
-            options.add_argument("--disable-extensions")
-            options.add_argument("--start-maximized")
             options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36")
             driver = uc.Chrome(options=options)
-            print("Mengaktifkan mode stealth untuk melewati Cloudflare...")
+            print("Mengaktifkan mode stealth...")
             stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
             print("Mode stealth aktif.")
         except Exception as e:
@@ -48,49 +45,52 @@ def setup_driver():
 def get_latest_result(pasaran):
     if driver is None: return None
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in NEW_DROPDOWN_VALUES:
-        print(f"Pasaran '{pasaran}' tidak ada di dalam mapping.")
-        return None
+    if pasaran_lower not in NEW_DROPDOWN_VALUES: return None
 
     try:
         print(f"Mengunjungi URL: {NEW_URL}")
         driver.get(NEW_URL)
-        wait = WebDriverWait(driver, 60)
+        wait = WebDriverWait(driver, 30)
 
-        print("Memberi jeda 10 detik agar halaman dimuat sepenuhnya...")
-        time.sleep(10)
+        print("Memberi jeda 5 detik agar halaman utama dimuat...")
+        time.sleep(5)
 
-        print("Mencari dan membuka dropdown pasaran...")
-        dropdown_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered")))
-        dropdown_box.click()
+        print("Membuka dropdown pasaran...")
+        wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered"))).click()
         
         pasaran_target_text = NEW_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Mencari dan mengklik opsi '{pasaran_target_text}' dari daftar...")
-        pasaran_option = wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']")))
-        pasaran_option.click()
+        print(f"Mengklik opsi '{pasaran_target_text}'...")
+        wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']"))).click()
 
         print("Beralih ke dalam frame data...")
         wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
         
-        # [PENYEMPURNAAN FINAL] Tambahkan jeda singkat di sini
-        print("Memberi jeda 3 detik agar tabel di dalam frame stabil...")
-        time.sleep(3)
+        print("Memberi jeda 5 detik agar tabel di dalam frame stabil...")
+        time.sleep(5)
 
-        print("Menunggu tabel hasil untuk dimuat...")
-        result_table = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table.table-bordered")))
+        # --- [METODE BARU YANG LEBIH ANDAL] ---
+        print("Mengambil kode HTML dari frame...")
+        html_content = driver.page_source
         
-        print("Mengambil angka keluaran dari tabel...")
-        first_row_result = result_table.find_element(By.CSS_SELECTOR, "tbody tr:first-child td:nth-child(2)")
-        result = first_row_result.text.strip()
+        print("Membaca data dari HTML menggunakan BeautifulSoup...")
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Cari sel pertama di baris pertama pada body tabel
+        cell = soup.select_one("tbody tr:first-child td:nth-child(2)")
+        
+        result = None
+        if cell:
+            result = cell.get_text(strip=True)
+            if len(result) == 4 and result.isdigit():
+                print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
+            else:
+                print(f"Format hasil tidak valid: '{result}'")
+                result = None
+        else:
+            print("Gagal menemukan sel hasil di dalam tabel.")
         
         driver.switch_to.default_content()
-        
-        if len(result) == 4 and result.isdigit():
-            print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
-            return result
-        else:
-            print(f"Format hasil tidak valid untuk {pasaran}: '{result}'")
-            return None
+        return result
 
     except Exception as e:
         print(f"Terjadi error saat memproses {pasaran}: {e}")
@@ -118,7 +118,7 @@ def update_file(filename, new_result):
 
 def main():
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
