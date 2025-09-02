@@ -8,50 +8,47 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-# --- KONFIGURASI BARU ---
+# --- KONFIGURASI ---
 NEW_URL = "https://server.scanangka.fun/keluarharian"
-
 PASARAN_FILES = {
-    'hongkongpools': 'keluaran hongkongpools.txt',
-    'hongkong': 'keluaran hongkong lotto.txt',
-    'sydneypools': 'keluaran sydneypools.txt',
-    'sydney': 'keluaran sydney lotto.txt',
-    'singapore': 'keluaran singapura.txt',
-    'bullseye': 'keluaran bullseye.txt',
+    'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
+    'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
+    'singapore': 'keluaran singapura.txt', 'bullseye': 'keluaran bullseye.txt',
 }
-
 NEW_DROPDOWN_VALUES = {
-    'hongkongpools': 'HONGKONG',
-    'hongkong': 'HONGKONG',
-    'sydneypools': 'SYDNEY',
-    'sydney': 'SYDNEY',
-    'singapore': 'SINGAPORE',
-    'bullseye': 'BULLSEYE',
+    'hongkongpools': 'HONGKONG', 'hongkong': 'HONGKONG', 'sydneypools': 'SYDNEY',
+    'sydney': 'SYDNEY', 'singapore': 'SINGAPORE', 'bullseye': 'BULLSEYE',
 }
 
 driver = None
 
+# --- [PERUBAHAN UTAMA] Menambahkan Opsi Browser untuk Stabilitas ---
 def setup_driver():
     global driver
     if driver is None:
         try:
-            print("Menyiapkan driver undetected-chromedriver...")
+            print("Menyiapkan driver undetected-chromedriver dengan opsi tambahan...")
             options = uc.ChromeOptions()
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            options.add_argument("--disable-gpu")
+            options.add_argument("--window-size=1920,1200")
+            options.add_argument("--ignore-certificate-errors")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--start-maximized")
+            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36")
             driver = uc.Chrome(options=options)
             print("Driver undetected-chromedriver siap.")
         except Exception as e:
             print(f"Error saat menyiapkan driver: {e}")
 
-# --- [PERBAIKAN] LOGIKA FUNGSI DISEMPURNAKAN ---
 def get_latest_result(pasaran):
+    # Fungsi ini sama seperti sebelumnya, tidak ada perubahan
     if driver is None: return None
     pasaran_lower = pasaran.lower()
     if pasaran_lower not in NEW_DROPDOWN_VALUES:
-        print(f"Pasaran '{pasaran}' tidak ada di dalam mapping NEW_DROPDOWN_VALUES.")
+        print(f"Pasaran '{pasaran}' tidak ada di dalam mapping.")
         return None
 
     try:
@@ -59,12 +56,10 @@ def get_latest_result(pasaran):
         driver.get(NEW_URL)
         wait = WebDriverWait(driver, 60)
 
-        # 1. Klik pada dropdown untuk membukanya
         print("Mencari dan membuka dropdown pasaran...")
         dropdown_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered")))
         dropdown_box.click()
         
-        # 2. [STRATEGI BARU] Cari search box yang muncul, lalu ketik nama pasaran
         print("Mencari search box di dalam dropdown...")
         search_box = wait.until(EC.visibility_of_element_located((By.CLASS_SELECTOR, "select2-search__field")))
         
@@ -72,16 +67,13 @@ def get_latest_result(pasaran):
         print(f"Mengetik '{pasaran_target_text}' ke dalam search box...")
         search_box.send_keys(pasaran_target_text)
 
-        # 3. Klik pada hasil pencarian yang cocok
         print(f"Mengklik hasil pencarian '{pasaran_target_text}'...")
         pasaran_option = wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']")))
         pasaran_option.click()
 
-        # 4. Tunggu hingga tabel hasil muncul
         print("Menunggu tabel hasil untuk dimuat...")
         result_table = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table.table-bordered")))
         
-        # 5. Ambil angka keluaran dari baris pertama, kolom kedua
         print("Mengambil angka keluaran dari tabel...")
         first_row_result = result_table.find_element(By.CSS_SELECTOR, "tbody tr:first-child td:nth-child(2)")
         result = first_row_result.text.strip()
@@ -106,7 +98,6 @@ def get_latest_result(pasaran):
         return None
 
 def update_file(filename, new_result):
-    # (Fungsi ini tidak perlu diubah)
     if not os.path.exists(filename):
         existing_results = set()
     else:
@@ -123,7 +114,6 @@ def update_file(filename, new_result):
         return False
 
 def main():
-    # (Fungsi ini tidak perlu diubah)
     wib = timezone(timedelta(hours=7))
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
     setup_driver()
