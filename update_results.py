@@ -1,64 +1,148 @@
+import os
+import time
+from bs4 import BeautifulSoup
+from datetime import datetime, timezone, timedelta
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
+
+# --- [PERUBAHAN 1] KONFIGURASI BARU ---
+# URL telah diubah ke situs web yang baru
+NEW_URL = "https://server.scanangka.fun/keluaranharian"
+
+# Daftar file output tetap sama
+PASARAN_FILES = {
+    'hongkongpools': 'keluaran hongkongpools.txt',
+    'hongkong': 'keluaran hongkong lotto.txt',
+    'sydneypools': 'keluaran sydneypools.txt',
+    'sydney': 'keluaran sydney lotto.txt',
+    'singapore': 'keluaran singapura.txt',
+    'bullseye': 'keluaran bullseye.txt',
+}
+
+# [PERUBAHAN 2] Mapping nama pasaran ke teks yang ada di dropdown situs baru.
+# PENTING: Anda mungkin perlu menyesuaikan teks ini agar 100% cocok dengan yang ada di web.
+# Contoh: 'HONGKONGPOOLS' atau 'HONGKONG POOLS'. Periksa kembali di situsnya.
+NEW_DROPDOWN_VALUES = {
+    'hongkongpools': 'HONGKONG',
+    'hongkong': 'HONGKONG',
+    'sydneypools': 'SYDNEY',
+    'sydney': 'SYDNEY',
+    'singapore': 'SINGAPORE',
+    'bullseye': 'BULLSEYE',
+}
+
+driver = None
+
+def setup_driver():
+    global driver
+    if driver is None:
+        try:
+            print("Menyiapkan driver undetected-chromedriver...")
+            options = uc.ChromeOptions()
+            options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            driver = uc.Chrome(options=options)
+            print("Driver undetected-chromedriver siap.")
+        except Exception as e:
+            print(f"Error saat menyiapkan driver: {e}")
+
+# --- [PERUBAHAN 3] LOGIKA FUNGSI DIUBAH TOTAL ---
 def get_latest_result(pasaran):
     if driver is None: return None
     pasaran_lower = pasaran.lower()
-    if pasaran_lower not in ANGKANET_DROPDOWN_VALUES: return None
+    if pasaran_lower not in NEW_DROPDOWN_VALUES:
+        print(f"Pasaran '{pasaran}' tidak ada di dalam mapping NEW_DROPDOWN_VALUES.")
+        return None
 
     try:
-        print(f"Mengunjungi URL: {ANGKANET_URL}")
-        driver.get(ANGKANET_URL)
+        print(f"Mengunjungi URL: {NEW_URL}")
+        driver.get(NEW_URL)
         wait = WebDriverWait(driver, 60)
+
+        # 1. Klik pada dropdown untuk membukanya
+        print("Mencari dan membuka dropdown pasaran...")
+        dropdown_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered")))
+        dropdown_box.click()
         
-        try:
-            cookie_button = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Setuju') or contains(text(), 'Accept')]")))
-            cookie_button.click()
-            print("Cookie banner ditemukan dan ditutup.")
-        except TimeoutException:
-            print("Tidak ada cookie banner yang ditemukan, melanjutkan proses.")
+        # 2. Cari dan klik opsi pasaran yang sesuai dari daftar yang muncul
+        pasaran_target_text = NEW_DROPDOWN_VALUES[pasaran_lower]
+        print(f"Memilih opsi '{pasaran_target_text}'...")
+        # Menggunakan XPATH untuk mencari elemen LI berdasarkan teksnya
+        pasaran_option = wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']")))
+        pasaran_option.click()
 
-        dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Memilih '{dropdown_value}' dari dropdown menggunakan JavaScript...")
-
-        # [PERBAIKAN UTAMA] Menggunakan JavaScript untuk memilih nilai dropdown
-        # Ini lebih andal daripada metode Select() jika ada JavaScript yang kompleks di halaman
-        try:
-            select_element = wait.until(EC.presence_of_element_located((By.NAME, "pasaran")))
-            driver.execute_script(f"arguments[0].value = '{dropdown_value}'; arguments[0].dispatchEvent(new Event('change'));", select_element)
-            print("Dropdown berhasil dipilih via JavaScript.")
-        except TimeoutException:
-            print("Gagal menemukan elemen dropdown 'pasaran' bahkan setelah menunggu.")
-            raise # Lemparkan kembali error untuk ditangkap oleh blok except utama
-
-        go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
-        driver.execute_script("arguments[0].click();", go_button)
-        print("Tombol 'Go' berhasil ditekan.")
-
-        print("Menunggu tabel hasil...")
-        result_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "table-hover")))
+        # 3. Tunggu hingga tabel hasil muncul
+        print("Menunggu tabel hasil untuk dimuat...")
+        result_table = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table.table-bordered")))
         
-        html = result_table.get_attribute('outerHTML')
-        soup = BeautifulSoup(html, 'html.parser')
+        # 4. Ambil angka keluaran dari baris pertama, kolom kedua
+        print("Mengambil angka keluaran dari tabel...")
+        # Menargetkan baris pertama (tr) di dalam tbody, lalu sel kedua (td)
+        first_row_result = result_table.find_element(By.CSS_SELECTOR, "tbody tr:first-child td:nth-child(2)")
+        result = first_row_result.text.strip()
         
-        first_row = soup.find('tbody').find('tr')
-        if not first_row: return None
+        if len(result) == 4 and result.isdigit():
+            print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
+            return result
+        else:
+            print(f"Format hasil tidak valid untuk {pasaran}: '{result}'")
+            return None
 
-        cells = first_row.find_all('td')
-        if len(cells) > 1:
-            result = cells[1].text.strip()
-            if len(result) == 4 and result.isdigit():
-                print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
-                return result
-        return None
     except Exception as e:
         print(f"Terjadi error saat memproses {pasaran}: {e}")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         screenshot_file = f"error_screenshot_{pasaran}_{timestamp}.png"
         html_file = f"error_page_source_{pasaran}_{timestamp}.html"
-        
-        # Simpan file debug
         driver.save_screenshot(screenshot_file)
         with open(html_file, "w", encoding="utf-8") as f:
             f.write(driver.page_source)
-        
         print(f"DEBUG: Screenshot disimpan sebagai '{screenshot_file}'")
         print(f"DEBUG: Kode sumber halaman disimpan sebagai '{html_file}'")
-    return None
+        return None
+
+def update_file(filename, new_result):
+    if not os.path.exists(filename):
+        existing_results = set()
+    else:
+        with open(filename, 'r', encoding='utf-8') as f:
+            existing_results = set(line.strip() for line in f if line.strip())
+            
+    if new_result not in existing_results:
+        with open(filename, 'a', encoding='utf-8') as f:
+            f.write(f"\n{new_result}")
+        print(f"HASIL BARU DITAMBAHKAN: {new_result} -> {filename}")
+        return True
+    else:
+        print(f"Hasil {new_result} sudah ada di {filename}. Tidak ada perubahan.")
+        return False
+
+def main():
+    wib = timezone(timedelta(hours=7))
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
+    setup_driver()
+    any_file_updated = False
+    if driver:
+        for pasaran, filename in PASARAN_FILES.items():
+            print(f"\nMemproses pasaran: {pasaran.capitalize()}")
+            latest_result = get_latest_result(pasaran)
+            if latest_result:
+                if update_file(filename, latest_result): 
+                    any_file_updated = True
+            else: 
+                print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran}.")
+        driver.quit()
+        
+    print("\n--- Proses pembaruan selesai. ---")
+    if not any_file_updated:
+        print("PERINGATAN: Tidak ada satu pun file yang diperbarui. Proses akan ditandai sebagai gagal.")
+        exit(1)
+    else:
+        print("Pembaruan berhasil. Setidaknya satu file telah diubah.")
+
+if __name__ == "__main__":
+    main()
