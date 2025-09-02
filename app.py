@@ -275,25 +275,34 @@ with st.sidebar:
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {label: st.number_input(f"{label.upper()}", 1, 100, 7, key=f"win_{label}") for label in DIGIT_LABELS}
 
-# --- FUNGSI INI DIPERBAIKI ---
 def get_file_name_from_lokasi(lokasi):
     cleaned_lokasi = lokasi.lower().replace(" ", "")
     if "hongkonglotto" in cleaned_lokasi: return "keluaran hongkong lotto.txt"
-    # Kesalahan 'keluarang' diperbaiki menjadi 'keluaran'
     if "hongkongpools" in cleaned_lokasi: return "keluaran hongkongpools.txt"
     if "sydneylotto" in cleaned_lokasi: return "keluaran sydney lotto.txt"
     if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
     return f"keluaran {lokasi.lower()}.txt"
 
+# --- PERUBAHAN LOGIKA PENGAMBILAN FILE DIMULAI DI SINI ---
 if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
-    file_name = get_file_name_from_lokasi(selected_lokasi)
+    # Tentukan nama folder tempat data disimpan
+    folder_data = "data_keluaran"
+    base_filename = get_file_name_from_lokasi(selected_lokasi)
+    
+    # Gabungkan nama folder dan nama file menjadi satu path lengkap
+    file_path = os.path.join(folder_data, base_filename)
+    
     try:
-        with open(file_name, 'r') as f: lines = f.readlines()
+        # Buka file menggunakan path lengkap
+        with open(file_path, 'r') as f:
+            lines = f.readlines()
         angka_from_file = [line.strip()[:4] for line in lines[-putaran:] if line.strip() and line.strip()[:4].isdigit()]
         if angka_from_file:
             st.session_state.angka_list = angka_from_file
-            st.success(f"{len(angka_from_file)} data berhasil diambil.")
-    except FileNotFoundError: st.error(f"File tidak ditemukan: '{file_name}'.")
+            st.success(f"{len(angka_from_file)} data berhasil diambil dari '{file_path}'.")
+    except FileNotFoundError:
+        st.error(f"File tidak ditemukan: '{file_path}'. Pastikan file ada di dalam folder '{folder_data}'.")
+# --- PERUBAHAN LOGIKA PENGAMBILAN FILE SELESAI ---
 
 with st.expander("✏️ Edit Data Angka Manual", expanded=True):
     riwayat_text = st.text_area("1 angka per baris:", "\n".join(st.session_state.angka_list), height=300, key="manual_data_input")
@@ -340,7 +349,6 @@ with tab_manajemen:
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Kategori")
     
-    # --- LANGKAH 1: GAMBAR SEMUA UI STATIS & TOMBOL ---
     scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 1, 99, 5)
     max_ws = scan_cols[1].number_input("Max WS", 1, 100, 31)
@@ -374,7 +382,6 @@ with tab_scan:
         for i, label in enumerate(JALUR_LABELS): create_scan_button(label, cols[i])
     st.divider()
 
-    # --- LANGKAH 2: TAMPILKAN SEMUA HASIL YANG SUDAH SELESAI ---
     if st.session_state.scan_outputs:
         st.markdown("---")
         st.subheader("✅ Hasil Scan Selesai")
@@ -395,7 +402,6 @@ with tab_scan:
         
         st.markdown("---")
 
-    # --- LANGKAH 3: PROSES ANTRIAN (DISPATCHER & EXECUTOR) ---
     if st.session_state.scan_queue:
         queue_display = " ➡️ ".join([f"**{job.replace('_', ' ').upper()}**" for job in st.session_state.scan_queue])
         st.info(f"Antrian Berikutnya: {queue_display}")
