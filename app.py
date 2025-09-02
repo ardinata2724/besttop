@@ -275,10 +275,12 @@ with st.sidebar:
     st.markdown("### 🪟 Window Size per Digit")
     window_per_digit = {label: st.number_input(f"{label.upper()}", 1, 100, 7, key=f"win_{label}") for label in DIGIT_LABELS}
 
+# --- FUNGSI INI DIPERBAIKI ---
 def get_file_name_from_lokasi(lokasi):
     cleaned_lokasi = lokasi.lower().replace(" ", "")
     if "hongkonglotto" in cleaned_lokasi: return "keluaran hongkong lotto.txt"
-    if "hongkongpools" in cleaned_lokasi: return "keluarang hongkongpools.txt"
+    # Kesalahan 'keluarang' diperbaiki menjadi 'keluaran'
+    if "hongkongpools" in cleaned_lokasi: return "keluaran hongkongpools.txt"
     if "sydneylotto" in cleaned_lokasi: return "keluaran sydney lotto.txt"
     if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
     return f"keluaran {lokasi.lower()}.txt"
@@ -335,7 +337,6 @@ with tab_manajemen:
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
         else: st.error("Data tidak cukup untuk melatih.")
 
-# ===== KODE BAGIAN INI DIUBAH UNTUK MEMPERBAIKI URUTAN TAMPILAN HASIL =====
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Kategori")
     
@@ -378,13 +379,9 @@ with tab_scan:
         st.markdown("---")
         st.subheader("✅ Hasil Scan Selesai")
         
-        # --- PERUBAHAN LOGIKA URUTAN DIMULAI DI SINI ---
-        # Buat daftar urutan tampilan yang benar untuk semua jenis scan
         display_order = DIGIT_LABELS + JUMLAH_LABELS + BBFS_LABELS + SHIO_LABELS + JALUR_LABELS
 
-        # Ulangi berdasarkan daftar urutan yang benar, bukan urutan penyelesaian
         for label in display_order:
-            # Hanya tampilkan jika hasilnya memang ada di session_state
             if label in st.session_state.scan_outputs:
                 data = st.session_state.scan_outputs[label]
                 with st.expander(f"Hasil untuk {label.replace('_', ' ').upper()}", expanded=True):
@@ -395,7 +392,6 @@ with tab_scan:
                             st.info(f"💡 **WS terbaik yang ditemukan: {data['ws']}**")
                     else:
                         st.warning("Tidak ada hasil yang valid untuk rentang WS ini.")
-        # --- PERUBAHAN LOGIKA URUTAN SELESAI ---
         
         st.markdown("---")
 
