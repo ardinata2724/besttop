@@ -9,10 +9,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from selenium_stealth import stealth
 
-# --- KONFIGURASI ---
-# [PERBAIKAN FINAL] URL telah dikoreksi dari 'keluarharian' menjadi 'keluaranharian'
+# --- KONFIGURASI (Sudah Benar) ---
 NEW_URL = "https://server.scanangka.fun/keluaranharian"
-
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
@@ -26,6 +24,7 @@ NEW_DROPDOWN_VALUES = {
 driver = None
 
 def setup_driver():
+    # Fungsi ini sudah benar, tidak ada perubahan
     global driver
     if driver is None:
         try:
@@ -40,20 +39,10 @@ def setup_driver():
             options.add_argument("--disable-extensions")
             options.add_argument("--start-maximized")
             options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36")
-            
             driver = uc.Chrome(options=options)
-
             print("Mengaktifkan mode stealth untuk melewati Cloudflare...")
-            stealth(driver,
-                    languages=["en-US", "en"],
-                    vendor="Google Inc.",
-                    platform="Win32",
-                    webgl_vendor="Intel Inc.",
-                    renderer="Intel Iris OpenGL Engine",
-                    fix_hairline=True,
-                    )
+            stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
             print("Mode stealth aktif.")
-
         except Exception as e:
             print(f"Error saat menyiapkan driver: {e}")
 
@@ -69,27 +58,26 @@ def get_latest_result(pasaran):
         driver.get(NEW_URL)
         wait = WebDriverWait(driver, 60)
 
-        print("Memberi jeda 10 detik agar stealth menyelesaikan tantangan Cloudflare & memuat halaman...")
+        print("Memberi jeda 10 detik agar halaman dimuat sepenuhnya...")
         time.sleep(10)
 
+        # --- [PERBAIKAN LOGIKA FINAL] ---
+        # 1. Klik dropdown untuk membukanya
         print("Mencari dan membuka dropdown pasaran...")
         dropdown_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered")))
         dropdown_box.click()
         
-        print("Mencari search box di dalam dropdown...")
-        search_box = wait.until(EC.visibility_of_element_located((By.CLASS_SELECTOR, "select2-search__field")))
-        
+        # 2. Langsung cari dan klik opsi pasaran dari daftar (tanpa mencari search box)
         pasaran_target_text = NEW_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Mengetik '{pasaran_target_text}' ke dalam search box...")
-        search_box.send_keys(pasaran_target_text)
-
-        print(f"Mengklik hasil pencarian '{pasaran_target_text}'...")
+        print(f"Mencari dan mengklik opsi '{pasaran_target_text}' dari daftar...")
         pasaran_option = wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']")))
         pasaran_option.click()
 
+        # 3. Tunggu tabel hasil
         print("Menunggu tabel hasil untuk dimuat...")
         result_table = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table.table-bordered")))
         
+        # 4. Ambil angka keluaran
         print("Mengambil angka keluaran dari tabel...")
         first_row_result = result_table.find_element(By.CSS_SELECTOR, "tbody tr:first-child td:nth-child(2)")
         result = first_row_result.text.strip()
@@ -131,7 +119,7 @@ def update_file(filename, new_result):
 
 def main():
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
