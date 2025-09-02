@@ -29,22 +29,19 @@ def get_latest_result(pasaran_path):
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # [PERBAIKAN] Menggunakan selector yang lebih spesifik untuk tabel data di togelmaster.org
-        # Mencari tabel di dalam div dengan class 'paito-month-group'
-        data_table = soup.select_one("div.paito-month-group table.wla-daily-datatable")
+        # [PERBAIKAN] Menggunakan selector yang lebih sederhana dan langsung untuk tabel
+        data_table = soup.find("table", class_="wla-daily-datatable")
 
         if not data_table:
             print("Gagal menemukan tabel data utama.")
             return None
         
-        # Ambil baris pertama di dalam tbody tabel tersebut
         first_row = data_table.select_one("tbody tr:first-child")
         
         if not first_row:
             print("Gagal menemukan baris pertama di dalam tabel hasil.")
             return None
 
-        # Ambil sel kedua (kolom 'Result') dari baris tersebut
         result_cell = first_row.select_one("td:nth-child(2)")
         
         if result_cell:
@@ -92,7 +89,8 @@ def main():
             if update_file(filename, latest_result): 
                 any_file_updated = True
         else: 
-            print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran_path.upper()}.") [cite: 1]
+            # Perbaikan: Menghapus  yang menyebabkan error
+            print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran_path.upper()}.")
             
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
