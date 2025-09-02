@@ -8,11 +8,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
-# --- [PERUBAHAN 1] KONFIGURASI BARU ---
-# URL telah diubah ke situs web yang baru
-NEW_URL = "https://server.scanangka.fun/keluaranharian"
+# --- KONFIGURASI BARU ---
+NEW_URL = "https://server.scanangka.fun/keluarharian"
 
-# Daftar file output tetap sama
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt',
     'hongkong': 'keluaran hongkong lotto.txt',
@@ -22,9 +20,6 @@ PASARAN_FILES = {
     'bullseye': 'keluaran bullseye.txt',
 }
 
-# [PERUBAHAN 2] Mapping nama pasaran ke teks yang ada di dropdown situs baru.
-# PENTING: Anda mungkin perlu menyesuaikan teks ini agar 100% cocok dengan yang ada di web.
-# Contoh: 'HONGKONGPOOLS' atau 'HONGKONG POOLS'. Periksa kembali di situsnya.
 NEW_DROPDOWN_VALUES = {
     'hongkongpools': 'HONGKONG',
     'hongkong': 'HONGKONG',
@@ -51,7 +46,7 @@ def setup_driver():
         except Exception as e:
             print(f"Error saat menyiapkan driver: {e}")
 
-# --- [PERUBAHAN 3] LOGIKA FUNGSI DIUBAH TOTAL ---
+# --- [PERBAIKAN] LOGIKA FUNGSI DISEMPURNAKAN ---
 def get_latest_result(pasaran):
     if driver is None: return None
     pasaran_lower = pasaran.lower()
@@ -69,20 +64,25 @@ def get_latest_result(pasaran):
         dropdown_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered")))
         dropdown_box.click()
         
-        # 2. Cari dan klik opsi pasaran yang sesuai dari daftar yang muncul
+        # 2. [STRATEGI BARU] Cari search box yang muncul, lalu ketik nama pasaran
+        print("Mencari search box di dalam dropdown...")
+        search_box = wait.until(EC.visibility_of_element_located((By.CLASS_SELECTOR, "select2-search__field")))
+        
         pasaran_target_text = NEW_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Memilih opsi '{pasaran_target_text}'...")
-        # Menggunakan XPATH untuk mencari elemen LI berdasarkan teksnya
+        print(f"Mengetik '{pasaran_target_text}' ke dalam search box...")
+        search_box.send_keys(pasaran_target_text)
+
+        # 3. Klik pada hasil pencarian yang cocok
+        print(f"Mengklik hasil pencarian '{pasaran_target_text}'...")
         pasaran_option = wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']")))
         pasaran_option.click()
 
-        # 3. Tunggu hingga tabel hasil muncul
+        # 4. Tunggu hingga tabel hasil muncul
         print("Menunggu tabel hasil untuk dimuat...")
         result_table = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table.table-bordered")))
         
-        # 4. Ambil angka keluaran dari baris pertama, kolom kedua
+        # 5. Ambil angka keluaran dari baris pertama, kolom kedua
         print("Mengambil angka keluaran dari tabel...")
-        # Menargetkan baris pertama (tr) di dalam tbody, lalu sel kedua (td)
         first_row_result = result_table.find_element(By.CSS_SELECTOR, "tbody tr:first-child td:nth-child(2)")
         result = first_row_result.text.strip()
         
@@ -106,6 +106,7 @@ def get_latest_result(pasaran):
         return None
 
 def update_file(filename, new_result):
+    # (Fungsi ini tidak perlu diubah)
     if not os.path.exists(filename):
         existing_results = set()
     else:
@@ -122,8 +123,9 @@ def update_file(filename, new_result):
         return False
 
 def main():
+    # (Fungsi ini tidak perlu diubah)
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
