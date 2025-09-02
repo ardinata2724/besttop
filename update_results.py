@@ -62,7 +62,12 @@ def get_latest_result(pasaran):
 
         print("Beralih ke dalam frame data...")
         wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
-        time.sleep(5)
+        
+        # --- [PERBAIKAN FINAL] ---
+        # Ganti jeda statis dengan perintah menunggu yang cerdas
+        # "Tunggu sampai baris pertama (tr) di dalam tbody benar-benar muncul"
+        print("Menunggu data di dalam tabel untuk dimuat...")
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table-bordered tbody tr")))
 
         print("Mengambil kode HTML dari frame...")
         html_content = driver.page_source
@@ -70,26 +75,14 @@ def get_latest_result(pasaran):
         print("Membaca data dari HTML menggunakan BeautifulSoup...")
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # --- [LOGIKA PEMBACAAN GAMBAR] ---
         result = None
-        # Cari baris pertama di dalam body tabel
         first_row = soup.select_one("tbody tr:first-child")
         if first_row:
-            # Cari sel kedua (kolom hasil)
             result_cell = first_row.select_one("td:nth-child(2)")
             if result_cell:
-                # Di dalam sel, cari semua tag gambar (<img>)
                 image_tags = result_cell.find_all("img")
                 if image_tags:
-                    digits = []
-                    for img in image_tags:
-                        # Ambil nama file dari src (contoh: .../9.png)
-                        src = img.get('src', '')
-                        # Ambil angka dari nama file (9.png -> 9)
-                        digit = src.split('/')[-1].split('.')[0]
-                        if digit.isdigit():
-                            digits.append(digit)
-                    
+                    digits = [img.get('src', '').split('/')[-1].split('.')[0] for img in image_tags if img.get('src', '').split('/')[-1].split('.')[0].isdigit()]
                     if len(digits) == 4:
                         result = "".join(digits)
                         print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
@@ -107,10 +100,6 @@ def get_latest_result(pasaran):
 
     except Exception as e:
         print(f"Terjadi error saat memproses {pasaran}: {e}")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        screenshot_file = f"error_screenshot_{pasaran}_{timestamp}.png"
-        driver.save_screenshot(screenshot_file)
-        print(f"DEBUG: Screenshot disimpan sebagai '{screenshot_file}'")
         return None
 
 def update_file(filename, new_result):
@@ -131,7 +120,7 @@ def update_file(filename, new_result):
 
 def main():
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
