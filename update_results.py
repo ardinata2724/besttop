@@ -1,50 +1,3 @@
-import os
-import time
-from bs4 import BeautifulSoup
-from datetime import datetime, timezone, timedelta
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import Select, WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-
-# --- KONFIGURASI ---
-PASARAN_FILES = {
-    'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
-    'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
-    'singapore': 'keluaran singapura.txt', 'bullseye': 'keluaran bullseye.txt',
-    'moroccoquatro18': 'keluaran morocco quatro 18:00 wib.txt',
-    'moroccoquatro21': 'keluaran morocco quatro 21:00 wib.txt',
-    'moroccoquatro23.59': 'keluaran morocco quatro 23:59 wib.txt',
-}
-ANGKANET_URL = "http://159.223.64.48/rumus-lengkap/"
-ANGKANET_DROPDOWN_VALUES = {
-    'hongkongpools': 'hongkong-pools', 'hongkong': 'hongkong-pools',
-    'sydneypools': 'sydney-pools', 'sydney': 'sydney-pools',
-    'singapore': 'singapore-pools', 'bullseye': 'bullseye',
-    'moroccoquatro21': 'morocco-quatro-21-00-wib',
-    'moroccoquatro18': 'morocco-quatro-18-00-wib',
-    'moroccoquatro23.59': 'morocco-quatro-00-00-wib',
-}
-
-driver = None
-
-def setup_driver():
-    global driver
-    if driver is None:
-        try:
-            print("Menyiapkan driver undetected-chromedriver...")
-            options = uc.ChromeOptions()
-            options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            # [PERBAIKAN] Tambahkan User-Agent untuk menyamar sebagai browser biasa
-            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
-            driver = uc.Chrome(options=options)
-            print("Driver undetected-chromedriver siap.")
-        except Exception as e:
-            print(f"Error saat menyiapkan driver: {e}")
-
 def get_latest_result(pasaran):
     if driver is None: return None
     pasaran_lower = pasaran.lower()
@@ -53,26 +6,28 @@ def get_latest_result(pasaran):
     try:
         print(f"Mengunjungi URL: {ANGKANET_URL}")
         driver.get(ANGKANET_URL)
-        # [PERBAIKAN 1] Waktu tunggu ditingkatkan menjadi 60 detik
         wait = WebDriverWait(driver, 60)
         
-        # [PERBAIKAN 2] Menambahkan penanganan untuk elemen yang mungkin menghalangi (misal: cookie banner)
         try:
-            # Cari tombol dengan teks 'Setuju' atau 'Accept' (sesuaikan jika perlu)
-            cookie_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Setuju') or contains(text(), 'Accept')]")))
+            cookie_button = WebDriverWait(driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Setuju') or contains(text(), 'Accept')]")))
             cookie_button.click()
             print("Cookie banner ditemukan dan ditutup.")
         except TimeoutException:
             print("Tidak ada cookie banner yang ditemukan, melanjutkan proses.")
 
         dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Memilih '{dropdown_value}' dari dropdown...")
-        
-        # [PERBAIKAN 3] Mengganti kondisi tunggu menjadi 'element_to_be_clickable' dan menghapus time.sleep()
-        select_element = wait.until(EC.element_to_be_clickable((By.NAME, "pasaran")))
-        Select(select_element).select_by_value(dropdown_value)
-        print("Dropdown berhasil dipilih.")
-        
+        print(f"Memilih '{dropdown_value}' dari dropdown menggunakan JavaScript...")
+
+        # [PERBAIKAN UTAMA] Menggunakan JavaScript untuk memilih nilai dropdown
+        # Ini lebih andal daripada metode Select() jika ada JavaScript yang kompleks di halaman
+        try:
+            select_element = wait.until(EC.presence_of_element_located((By.NAME, "pasaran")))
+            driver.execute_script(f"arguments[0].value = '{dropdown_value}'; arguments[0].dispatchEvent(new Event('change'));", select_element)
+            print("Dropdown berhasil dipilih via JavaScript.")
+        except TimeoutException:
+            print("Gagal menemukan elemen dropdown 'pasaran' bahkan setelah menunggu.")
+            raise # Lemparkan kembali error untuk ditangkap oleh blok except utama
+
         go_button = wait.until(EC.element_to_be_clickable((By.NAME, "patah")))
         driver.execute_script("arguments[0].click();", go_button)
         print("Tombol 'Go' berhasil ditekan.")
@@ -95,11 +50,11 @@ def get_latest_result(pasaran):
         return None
     except Exception as e:
         print(f"Terjadi error saat memproses {pasaran}: {e}")
-        # [PERBAIKAN 4] Menambahkan kode debugging untuk menyimpan screenshot dan source code halaman saat error
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         screenshot_file = f"error_screenshot_{pasaran}_{timestamp}.png"
         html_file = f"error_page_source_{pasaran}_{timestamp}.html"
         
+        # Simpan file debug
         driver.save_screenshot(screenshot_file)
         with open(html_file, "w", encoding="utf-8") as f:
             f.write(driver.page_source)
@@ -107,35 +62,3 @@ def get_latest_result(pasaran):
         print(f"DEBUG: Screenshot disimpan sebagai '{screenshot_file}'")
         print(f"DEBUG: Kode sumber halaman disimpan sebagai '{html_file}'")
     return None
-
-def update_file(filename, new_result):
-    if not os.path.exists(filename): existing_results = set()
-    else:
-        with open(filename, 'r', encoding='utf-8') as f:
-            existing_results = set(line.strip() for line in f if line.strip())
-    if new_result not in existing_results:
-        with open(filename, 'a', encoding='utf-8') as f: f.write(f"\n{new_result}")
-        print(f"HASIL BARU DITAMBAHKAN: {new_result} -> {filename}")
-        return True
-    else:
-        print(f"Hasil {new_result} sudah ada di {filename}. Tidak ada perubahan.")
-        return False
-
-def main():
-    wib = timezone(timedelta(hours=7)); print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
-    setup_driver()
-    any_file_updated = False
-    if driver:
-        for pasaran, filename in PASARAN_FILES.items():
-            print(f"\nMemproses pasaran: {pasaran.capitalize()}")
-            latest_result = get_latest_result(pasaran)
-            if latest_result:
-                if update_file(filename, latest_result): any_file_updated = True
-            else: print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran}.")
-        driver.quit()
-    print("\n--- Proses pembaruan selesai. ---")
-    if not any_file_updated:
-        print("Tidak ada file yang diperbarui. Keluar."); exit(0)
-
-if __name__ == "__main__":
-    main()
