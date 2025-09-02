@@ -24,7 +24,6 @@ NEW_DROPDOWN_VALUES = {
 driver = None
 
 def setup_driver():
-    # Fungsi ini sudah benar, tidak ada perubahan
     global driver
     if driver is None:
         try:
@@ -61,26 +60,28 @@ def get_latest_result(pasaran):
         print("Memberi jeda 10 detik agar halaman dimuat sepenuhnya...")
         time.sleep(10)
 
-        # --- [PERBAIKAN LOGIKA FINAL] ---
-        # 1. Klik dropdown untuk membukanya
         print("Mencari dan membuka dropdown pasaran...")
         dropdown_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered")))
         dropdown_box.click()
         
-        # 2. Langsung cari dan klik opsi pasaran dari daftar (tanpa mencari search box)
         pasaran_target_text = NEW_DROPDOWN_VALUES[pasaran_lower]
         print(f"Mencari dan mengklik opsi '{pasaran_target_text}' dari daftar...")
         pasaran_option = wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']")))
         pasaran_option.click()
 
-        # 3. Tunggu tabel hasil
+        # --- [PERBAIKAN FINAL] Pindah ke dalam iframe tempat tabel berada ---
+        print("Beralih ke dalam frame data...")
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
+
         print("Menunggu tabel hasil untuk dimuat...")
         result_table = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table.table-bordered")))
         
-        # 4. Ambil angka keluaran
         print("Mengambil angka keluaran dari tabel...")
         first_row_result = result_table.find_element(By.CSS_SELECTOR, "tbody tr:first-child td:nth-child(2)")
         result = first_row_result.text.strip()
+        
+        # Kembali ke konteks utama halaman setelah selesai
+        driver.switch_to.default_content()
         
         if len(result) == 4 and result.isdigit():
             print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
@@ -91,14 +92,11 @@ def get_latest_result(pasaran):
 
     except Exception as e:
         print(f"Terjadi error saat memproses {pasaran}: {e}")
+        # Kode debug biarkan saja untuk keamanan, tapi seharusnya tidak akan terpakai lagi
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         screenshot_file = f"error_screenshot_{pasaran}_{timestamp}.png"
-        html_file = f"error_page_source_{pasaran}_{timestamp}.html"
         driver.save_screenshot(screenshot_file)
-        with open(html_file, "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
         print(f"DEBUG: Screenshot disimpan sebagai '{screenshot_file}'")
-        print(f"DEBUG: Kode sumber halaman disimpan sebagai '{html_file}'")
         return None
 
 def update_file(filename, new_result):
