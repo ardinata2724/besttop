@@ -246,7 +246,7 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
 # ==============================================================================
 st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
-# LANGKAH 1: INISIALISASI STATE UNTUK ANTRIAN
+# Inisialisasi State untuk Antrian
 if 'angka_list' not in st.session_state: st.session_state.angka_list = []
 if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
 if 'scan_queue' not in st.session_state: st.session_state.scan_queue = []
@@ -332,10 +332,11 @@ with tab_manajemen:
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
         else: st.error("Data tidak cukup untuk melatih.")
 
-# LANGKAH 2 & 3: UBAH LOGIKA TAB SCAN SECARA KESELURUHAN
-# Fungsi create_scan_button yang baru didefinisikan di dalam tab
+# ===== KODE BAGIAN INI DIUBAH TOTAL =====
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Kategori")
+    
+    # --- LANGKAH 1: GAMBAR SEMUA UI TERLEBIH DAHULU ---
     scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 1, 99, 5)
     max_ws = scan_cols[1].number_input("Max WS", 1, 100, 31)
@@ -344,34 +345,7 @@ with tab_scan:
         st.rerun()
     st.divider()
 
-    # Tampilkan antrian yang sedang berjalan kepada pengguna
-    if st.session_state.scan_queue:
-        queue_display = " ➡️ ".join([f"**{job.replace('_', ' ').upper()}**" for job in st.session_state.scan_queue])
-        st.info(f"Antrian Berikutnya: {queue_display}")
-    
-    # Ambil tugas baru dari antrian jika tidak ada yang sedang berjalan
-    if not st.session_state.current_scan_job and st.session_state.scan_queue:
-        st.session_state.current_scan_job = st.session_state.scan_queue.pop(0)
-        st.rerun() # Jalankan ulang untuk segera memulai proses scan
-
-    # Jika ada tugas yang sedang berjalan, eksekusi
-    if st.session_state.current_scan_job:
-        label = st.session_state.current_scan_job
-        if len(df) < max_ws + 10:
-            st.error(f"Data tidak cukup untuk scan {label.upper()}. Tugas dibatalkan.")
-            st.session_state.current_scan_job = None # Batalkan tugas
-            st.rerun()
-        else:
-            st.warning(f"⏳ Sedang menjalankan scan untuk **{label.replace('_', ' ').upper()}**...")
-            best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit, jumlah_digit_shio)
-            st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
-            
-            st.success(f"✔️ Scan untuk **{label.replace('_', ' ').upper()}** selesai.")
-            st.session_state.current_scan_job = None
-            time.sleep(1) 
-            st.rerun()
-            
-    # Fungsi baru untuk tombol yang hanya menambahkan ke antrian
+    # Fungsi untuk tombol yang hanya menambahkan tugas ke antrian
     def create_scan_button(label, container):
         is_pending = label in st.session_state.scan_queue or st.session_state.current_scan_job == label
         if container.button(f"🔎 Scan {label.replace('_', ' ').upper()}", key=f"scan_{label}", use_container_width=True, disabled=is_pending):
@@ -379,6 +353,7 @@ with tab_scan:
             st.toast(f"✅ Scan untuk '{label.upper()}' ditambahkan ke antrian.")
             st.rerun()
 
+    # Tampilkan semua tombol dalam tabs
     category_tabs = st.tabs(["Digit", "Jumlah", "BBFS", "Shio", "Jalur Main"])
     with category_tabs[0]:
         cols = st.columns(len(DIGIT_LABELS))
@@ -397,7 +372,38 @@ with tab_scan:
         for i, label in enumerate(JALUR_LABELS): create_scan_button(label, cols[i])
     st.divider()
 
-    # Tampilkan hasil scan
+    # --- LANGKAH 2: PROSES ANTRIAN SETELAH UI DITAMPILKAN ---
+
+    # Tampilkan antrian yang menunggu
+    if st.session_state.scan_queue:
+        queue_display = " ➡️ ".join([f"**{job.replace('_', ' ').upper()}**" for job in st.session_state.scan_queue])
+        st.info(f"Antrian Berikutnya: {queue_display}")
+    
+    # Ambil tugas baru dari antrian jika tidak ada yang sedang berjalan
+    if not st.session_state.current_scan_job and st.session_state.scan_queue:
+        st.session_state.current_scan_job = st.session_state.scan_queue.pop(0)
+        st.rerun() # Rerun untuk segera memulai proses scan
+
+    # Jika ada tugas yang sedang berjalan, eksekusi di bawah tombol
+    if st.session_state.current_scan_job:
+        label = st.session_state.current_scan_job
+        if len(df) < max_ws + 10:
+            st.error(f"Data tidak cukup untuk scan {label.upper()}. Tugas dibatalkan.")
+            st.session_state.current_scan_job = None # Batalkan tugas
+            time.sleep(2)
+            st.rerun()
+        else:
+            # Pesan akan muncul di bawah tombol-tombol
+            st.warning(f"⏳ Sedang menjalankan scan untuk **{label.replace('_', ' ').upper()}**...")
+            best_ws, result_table = find_best_window_size(df, label, model_type, min_ws, max_ws, jumlah_digit, jumlah_digit_shio)
+            st.session_state.scan_outputs[label] = {"ws": best_ws, "table": result_table}
+            
+            st.success(f"✔️ Scan untuk **{label.replace('_', ' ').upper()}** selesai.")
+            st.session_state.current_scan_job = None
+            time.sleep(1) 
+            st.rerun() # Rerun untuk mengambil tugas berikutnya dari antrian
+    
+    # --- LANGKAH 3: TAMPILKAN HASIL AKHIR ---
     for label, data in st.session_state.scan_outputs.items():
         with st.expander(f"Hasil Scan untuk {label.replace('_', ' ').upper()}", expanded=True):
             result_df = data.get("table")
