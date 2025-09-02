@@ -6,6 +6,7 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 # --- KONFIGURASI ---
 PASARAN_FILES = {
@@ -37,6 +38,8 @@ def setup_driver():
             options.add_argument("--headless")
             options.add_argument("--no-sandbox")
             options.add_argument("--disable-dev-shm-usage")
+            # [PERBAIKAN] Tambahkan User-Agent untuk menyamar sebagai browser biasa
+            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
             driver = uc.Chrome(options=options)
             print("Driver undetected-chromedriver siap.")
         except Exception as e:
@@ -50,14 +53,23 @@ def get_latest_result(pasaran):
     try:
         print(f"Mengunjungi URL: {ANGKANET_URL}")
         driver.get(ANGKANET_URL)
-        wait = WebDriverWait(driver, 30)
+        # [PERBAIKAN 1] Waktu tunggu ditingkatkan menjadi 60 detik
+        wait = WebDriverWait(driver, 60)
         
-        print("Memberi jeda 5 detik agar halaman stabil...")
-        time.sleep(5)
-        
+        # [PERBAIKAN 2] Menambahkan penanganan untuk elemen yang mungkin menghalangi (misal: cookie banner)
+        try:
+            # Cari tombol dengan teks 'Setuju' atau 'Accept' (sesuaikan jika perlu)
+            cookie_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), 'Setuju') or contains(text(), 'Accept')]")))
+            cookie_button.click()
+            print("Cookie banner ditemukan dan ditutup.")
+        except TimeoutException:
+            print("Tidak ada cookie banner yang ditemukan, melanjutkan proses.")
+
         dropdown_value = ANGKANET_DROPDOWN_VALUES[pasaran_lower]
         print(f"Memilih '{dropdown_value}' dari dropdown...")
-        select_element = wait.until(EC.visibility_of_element_located((By.NAME, "pasaran")))
+        
+        # [PERBAIKAN 3] Mengganti kondisi tunggu menjadi 'element_to_be_clickable' dan menghapus time.sleep()
+        select_element = wait.until(EC.element_to_be_clickable((By.NAME, "pasaran")))
         Select(select_element).select_by_value(dropdown_value)
         print("Dropdown berhasil dipilih.")
         
@@ -83,6 +95,17 @@ def get_latest_result(pasaran):
         return None
     except Exception as e:
         print(f"Terjadi error saat memproses {pasaran}: {e}")
+        # [PERBAIKAN 4] Menambahkan kode debugging untuk menyimpan screenshot dan source code halaman saat error
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        screenshot_file = f"error_screenshot_{pasaran}_{timestamp}.png"
+        html_file = f"error_page_source_{pasaran}_{timestamp}.html"
+        
+        driver.save_screenshot(screenshot_file)
+        with open(html_file, "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+        
+        print(f"DEBUG: Screenshot disimpan sebagai '{screenshot_file}'")
+        print(f"DEBUG: Kode sumber halaman disimpan sebagai '{html_file}'")
     return None
 
 def update_file(filename, new_result):
