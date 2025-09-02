@@ -51,8 +51,6 @@ def get_latest_result(pasaran):
         print(f"Mengunjungi URL: {NEW_URL}")
         driver.get(NEW_URL)
         wait = WebDriverWait(driver, 30)
-
-        print("Memberi jeda 5 detik agar halaman utama dimuat...")
         time.sleep(5)
 
         print("Membuka dropdown pasaran...")
@@ -64,31 +62,46 @@ def get_latest_result(pasaran):
 
         print("Beralih ke dalam frame data...")
         wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
-        
-        print("Memberi jeda 5 detik agar tabel di dalam frame stabil...")
         time.sleep(5)
 
-        # --- [METODE BARU YANG LEBIH ANDAL] ---
         print("Mengambil kode HTML dari frame...")
         html_content = driver.page_source
         
         print("Membaca data dari HTML menggunakan BeautifulSoup...")
         soup = BeautifulSoup(html_content, 'html.parser')
         
-        # Cari sel pertama di baris pertama pada body tabel
-        cell = soup.select_one("tbody tr:first-child td:nth-child(2)")
-        
+        # --- [LOGIKA PEMBACAAN GAMBAR] ---
         result = None
-        if cell:
-            result = cell.get_text(strip=True)
-            if len(result) == 4 and result.isdigit():
-                print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
+        # Cari baris pertama di dalam body tabel
+        first_row = soup.select_one("tbody tr:first-child")
+        if first_row:
+            # Cari sel kedua (kolom hasil)
+            result_cell = first_row.select_one("td:nth-child(2)")
+            if result_cell:
+                # Di dalam sel, cari semua tag gambar (<img>)
+                image_tags = result_cell.find_all("img")
+                if image_tags:
+                    digits = []
+                    for img in image_tags:
+                        # Ambil nama file dari src (contoh: .../9.png)
+                        src = img.get('src', '')
+                        # Ambil angka dari nama file (9.png -> 9)
+                        digit = src.split('/')[-1].split('.')[0]
+                        if digit.isdigit():
+                            digits.append(digit)
+                    
+                    if len(digits) == 4:
+                        result = "".join(digits)
+                        print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
+                    else:
+                        print(f"Gagal menggabungkan angka dari gambar. Ditemukan: {''.join(digits)}")
+                else:
+                    print("Tidak ditemukan tag <img> di dalam sel hasil.")
             else:
-                print(f"Format hasil tidak valid: '{result}'")
-                result = None
+                print("Gagal menemukan sel hasil (kolom kedua).")
         else:
-            print("Gagal menemukan sel hasil di dalam tabel.")
-        
+            print("Gagal menemukan baris pertama di dalam tabel.")
+
         driver.switch_to.default_content()
         return result
 
@@ -107,18 +120,18 @@ def update_file(filename, new_result):
         with open(filename, 'r', encoding='utf-8') as f:
             existing_results = set(line.strip() for line in f if line.strip())
             
-    if new_result not in existing_results:
+    if new_result and new_result not in existing_results:
         with open(filename, 'a', encoding='utf-8') as f:
             f.write(f"\n{new_result}")
         print(f"HASIL BARU DITAMBAHKAN: {new_result} -> {filename}")
         return True
-    else:
+    elif new_result:
         print(f"Hasil {new_result} sudah ada di {filename}. Tidak ada perubahan.")
-        return False
+    return False
 
 def main():
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
