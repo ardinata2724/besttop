@@ -4,7 +4,6 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 
 # --- KONFIGURASI FINAL UNTUK SUMBER DATA BARU ---
-# Mapping nama file ke path URL di sumber data yang baru
 PASARAN_MAPPING = {
     'keluaran hongkongpools.txt': 'hongkong',
     'keluaran hongkong lotto.txt': 'hongkong',
@@ -14,7 +13,6 @@ PASARAN_MAPPING = {
     'keluaran bullseye.txt': 'bullseye',
 }
 
-# URL dari sumber data yang baru dan lebih stabil
 DATA_URL = "https://togelmaster.org/paito/"
 
 def get_latest_result(pasaran_path):
@@ -31,20 +29,27 @@ def get_latest_result(pasaran_path):
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Cari baris pertama yang memiliki class 'even' atau 'odd' di dalam tabel
-        first_row = soup.select_one("table.table-bordered tbody tr.even, table.table-bordered tbody tr.odd")
+        # [PERBAIKAN] Menggunakan selector yang lebih spesifik untuk tabel data di togelmaster.org
+        # Mencari tabel di dalam div dengan class 'paito-month-group'
+        data_table = soup.select_one("div.paito-month-group table.wla-daily-datatable")
+
+        if not data_table:
+            print("Gagal menemukan tabel data utama.")
+            return None
+        
+        # Ambil baris pertama di dalam tbody tabel tersebut
+        first_row = data_table.select_one("tbody tr:first-child")
         
         if not first_row:
-            print("Gagal menemukan baris pertama di tabel hasil.")
+            print("Gagal menemukan baris pertama di dalam tabel hasil.")
             return None
 
-        # Ambil sel (td) terakhir dari baris tersebut
-        last_cell = first_row.select_one("td:last-child")
+        # Ambil sel kedua (kolom 'Result') dari baris tersebut
+        result_cell = first_row.select_one("td:nth-child(2)")
         
-        if last_cell:
-            result = last_cell.get_text(strip=True)
+        if result_cell:
+            result = result_cell.get_text(strip=True)
             if len(result) >= 4 and result.isdigit():
-                # Ambil 4 digit terakhir jika hasilnya lebih panjang (misal: SGP 4D)
                 result = result[-4:]
                 print(f"Sukses mendapatkan hasil untuk {pasaran_path.upper()}: {result}")
                 return result
@@ -87,7 +92,7 @@ def main():
             if update_file(filename, latest_result): 
                 any_file_updated = True
         else: 
-            print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran_path.upper()}.")
+            print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran_path.upper()}.") [cite: 1]
             
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
