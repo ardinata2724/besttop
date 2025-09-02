@@ -6,7 +6,8 @@ import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import TimeoutException
+from selenium_stealth import stealth # <-- [PERUBAHAN 1] Import stealth
 
 # --- KONFIGURASI ---
 NEW_URL = "https://server.scanangka.fun/keluarharian"
@@ -22,7 +23,6 @@ NEW_DROPDOWN_VALUES = {
 
 driver = None
 
-# --- [PERUBAHAN UTAMA] Menambahkan Opsi Browser untuk Stabilitas ---
 def setup_driver():
     global driver
     if driver is None:
@@ -38,13 +38,25 @@ def setup_driver():
             options.add_argument("--disable-extensions")
             options.add_argument("--start-maximized")
             options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36")
+            
             driver = uc.Chrome(options=options)
-            print("Driver undetected-chromedriver siap.")
+
+            # --- [PERUBAHAN 2] Mengaktifkan penyamaran stealth ---
+            print("Mengaktifkan mode stealth untuk melewati Cloudflare...")
+            stealth(driver,
+                    languages=["en-US", "en"],
+                    vendor="Google Inc.",
+                    platform="Win32",
+                    webgl_vendor="Intel Inc.",
+                    renderer="Intel Iris OpenGL Engine",
+                    fix_hairline=True,
+                    )
+            print("Mode stealth aktif.")
+
         except Exception as e:
             print(f"Error saat menyiapkan driver: {e}")
 
 def get_latest_result(pasaran):
-    # Fungsi ini sama seperti sebelumnya, tidak ada perubahan
     if driver is None: return None
     pasaran_lower = pasaran.lower()
     if pasaran_lower not in NEW_DROPDOWN_VALUES:
@@ -55,6 +67,10 @@ def get_latest_result(pasaran):
         print(f"Mengunjungi URL: {NEW_URL}")
         driver.get(NEW_URL)
         wait = WebDriverWait(driver, 60)
+
+        # Tambahkan jeda singkat untuk membiarkan tantangan Cloudflare diselesaikan oleh stealth
+        print("Memberi jeda 10 detik agar stealth menyelesaikan tantangan Cloudflare...")
+        time.sleep(10)
 
         print("Mencari dan membuka dropdown pasaran...")
         dropdown_box = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered")))
@@ -115,7 +131,7 @@ def update_file(filename, new_result):
 
 def main():
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
