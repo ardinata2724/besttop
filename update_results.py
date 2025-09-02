@@ -69,9 +69,12 @@ def get_latest_result(pasaran):
         pasaran_option = wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']")))
         pasaran_option.click()
 
-        # --- [PERBAIKAN FINAL] Pindah ke dalam iframe tempat tabel berada ---
         print("Beralih ke dalam frame data...")
         wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
+        
+        # [PENYEMPURNAAN FINAL] Tambahkan jeda singkat di sini
+        print("Memberi jeda 3 detik agar tabel di dalam frame stabil...")
+        time.sleep(3)
 
         print("Menunggu tabel hasil untuk dimuat...")
         result_table = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table.table-bordered")))
@@ -80,7 +83,6 @@ def get_latest_result(pasaran):
         first_row_result = result_table.find_element(By.CSS_SELECTOR, "tbody tr:first-child td:nth-child(2)")
         result = first_row_result.text.strip()
         
-        # Kembali ke konteks utama halaman setelah selesai
         driver.switch_to.default_content()
         
         if len(result) == 4 and result.isdigit():
@@ -92,7 +94,6 @@ def get_latest_result(pasaran):
 
     except Exception as e:
         print(f"Terjadi error saat memproses {pasaran}: {e}")
-        # Kode debug biarkan saja untuk keamanan, tapi seharusnya tidak akan terpakai lagi
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         screenshot_file = f"error_screenshot_{pasaran}_{timestamp}.png"
         driver.save_screenshot(screenshot_file)
@@ -117,7 +118,7 @@ def update_file(filename, new_result):
 
 def main():
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
