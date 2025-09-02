@@ -7,10 +7,12 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from selenium_stealth import stealth # <-- [PERUBAHAN 1] Import stealth
+from selenium_stealth import stealth
 
 # --- KONFIGURASI ---
-NEW_URL = "https://server.scanangka.fun/keluarharian"
+# [PERBAIKAN FINAL] URL telah dikoreksi dari 'keluarharian' menjadi 'keluaranharian'
+NEW_URL = "https://server.scanangka.fun/keluaranharian"
+
 PASARAN_FILES = {
     'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
     'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
@@ -41,7 +43,6 @@ def setup_driver():
             
             driver = uc.Chrome(options=options)
 
-            # --- [PERUBAHAN 2] Mengaktifkan penyamaran stealth ---
             print("Mengaktifkan mode stealth untuk melewati Cloudflare...")
             stealth(driver,
                     languages=["en-US", "en"],
@@ -68,8 +69,7 @@ def get_latest_result(pasaran):
         driver.get(NEW_URL)
         wait = WebDriverWait(driver, 60)
 
-        # Tambahkan jeda singkat untuk membiarkan tantangan Cloudflare diselesaikan oleh stealth
-        print("Memberi jeda 10 detik agar stealth menyelesaikan tantangan Cloudflare...")
+        print("Memberi jeda 10 detik agar stealth menyelesaikan tantangan Cloudflare & memuat halaman...")
         time.sleep(10)
 
         print("Mencari dan membuka dropdown pasaran...")
@@ -131,7 +131,7 @@ def update_file(filename, new_result):
 
 def main():
     wib = timezone(timedelta(hours=7))
-    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
+    print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M%S WIB')} ---")
     setup_driver()
     any_file_updated = False
     if driver:
