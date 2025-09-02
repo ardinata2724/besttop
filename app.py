@@ -278,7 +278,7 @@ with st.sidebar:
 def get_file_name_from_lokasi(lokasi):
     cleaned_lokasi = lokasi.lower().replace(" ", "")
     if "hongkonglotto" in cleaned_lokasi: return "keluaran hongkong lotto.txt"
-    if "hongkongpools" in cleaned_lokasi: return "keluaran hongkongpools.txt"
+    if "hongkongpools" in cleaned_lokasi: return "keluarang hongkongpools.txt"
     if "sydneylotto" in cleaned_lokasi: return "keluaran sydney lotto.txt"
     if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
     return f"keluaran {lokasi.lower()}.txt"
@@ -335,7 +335,7 @@ with tab_manajemen:
             st.success("✅ Semua model berhasil dilatih!"); st.rerun()
         else: st.error("Data tidak cukup untuk melatih.")
 
-# ===== KODE BAGIAN INI DIUBAH LAGI UNTUK ALUR TAMPILAN YANG LEBIH BAIK =====
+# ===== KODE BAGIAN INI DIUBAH UNTUK MEMPERBAIKI URUTAN TAMPILAN HASIL =====
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Kategori")
     
@@ -374,23 +374,30 @@ with tab_scan:
     st.divider()
 
     # --- LANGKAH 2: TAMPILKAN SEMUA HASIL YANG SUDAH SELESAI ---
-    # Dijalankan di setiap rerun untuk memastikan semua hasil yang ada di session_state ditampilkan
-    # Diurutkan terbalik agar hasil terbaru ada di paling atas
     if st.session_state.scan_outputs:
         st.markdown("---")
         st.subheader("✅ Hasil Scan Selesai")
-        for label in reversed(list(st.session_state.scan_outputs.keys())):
-            data = st.session_state.scan_outputs[label]
-            with st.expander(f"Hasil untuk {label.replace('_', ' ').upper()}", expanded=True):
-                result_df = data.get("table")
-                if result_df is not None and not result_df.empty:
-                    st.dataframe(result_df)
-                    if data["ws"] is not None:
-                        st.info(f"💡 **WS terbaik yang ditemukan: {data['ws']}**")
-                else:
-                    st.warning("Tidak ada hasil yang valid untuk rentang WS ini.")
-        st.markdown("---")
+        
+        # --- PERUBAHAN LOGIKA URUTAN DIMULAI DI SINI ---
+        # Buat daftar urutan tampilan yang benar untuk semua jenis scan
+        display_order = DIGIT_LABELS + JUMLAH_LABELS + BBFS_LABELS + SHIO_LABELS + JALUR_LABELS
 
+        # Ulangi berdasarkan daftar urutan yang benar, bukan urutan penyelesaian
+        for label in display_order:
+            # Hanya tampilkan jika hasilnya memang ada di session_state
+            if label in st.session_state.scan_outputs:
+                data = st.session_state.scan_outputs[label]
+                with st.expander(f"Hasil untuk {label.replace('_', ' ').upper()}", expanded=True):
+                    result_df = data.get("table")
+                    if result_df is not None and not result_df.empty:
+                        st.dataframe(result_df)
+                        if data["ws"] is not None:
+                            st.info(f"💡 **WS terbaik yang ditemukan: {data['ws']}**")
+                    else:
+                        st.warning("Tidak ada hasil yang valid untuk rentang WS ini.")
+        # --- PERUBAHAN LOGIKA URUTAN SELESAI ---
+        
+        st.markdown("---")
 
     # --- LANGKAH 3: PROSES ANTRIAN (DISPATCHER & EXECUTOR) ---
     if st.session_state.scan_queue:
