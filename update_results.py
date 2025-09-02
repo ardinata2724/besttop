@@ -3,60 +3,60 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
 
-# --- KONFIGURASI FINAL ---
-# Mapping nama file ke ID pasaran di sumber data yang baru
+# --- KONFIGURASI FINAL UNTUK SUMBER DATA BARU ---
+# Mapping nama file ke path URL di sumber data yang baru
 PASARAN_MAPPING = {
-    'keluaran hongkongpools.txt': 'hk',
-    'keluaran hongkong lotto.txt': 'hk',
-    'keluaran sydneypools.txt': 'sdy',
-    'keluaran sydney lotto.txt': 'sdy',
+    'keluaran hongkongpools.txt': 'hongkong',
+    'keluaran hongkong lotto.txt': 'hongkong',
+    'keluaran sydneypools.txt': 'sydney',
+    'keluaran sydney lotto.txt': 'sydney',
     'keluaran singapura.txt': 'sgp',
-    'keluaran bullseye.txt': 'bl',
+    'keluaran bullseye.txt': 'bullseye',
 }
 
 # URL dari sumber data yang baru dan lebih stabil
-DATA_URL = "https://www.paitopaman.com/paito/"
+DATA_URL = "https://togelmaster.org/paito/"
 
-def get_latest_result(pasaran_id):
+def get_latest_result(pasaran_path):
     try:
-        target_url = DATA_URL + pasaran_id
+        target_url = DATA_URL + pasaran_path
         print(f"Mengunjungi URL: {target_url}")
         
-        # Gunakan header untuk menyamar sebagai browser biasa
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'
         }
         
         response = requests.get(target_url, headers=headers, timeout=30)
-        response.raise_for_status() # Cek jika ada error HTTP
+        response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Cari tabel dengan class 'table' dan ambil baris pertama di tbody
-        first_row = soup.select_one("table.table tbody tr:first-child")
+        # Cari baris pertama yang memiliki class 'even' atau 'odd' di dalam tabel
+        first_row = soup.select_one("table.table-bordered tbody tr.even, table.table-bordered tbody tr.odd")
         
         if not first_row:
             print("Gagal menemukan baris pertama di tabel hasil.")
             return None
 
-        # Ambil semua sel (td) di baris tersebut
-        cells = first_row.find_all("td")
+        # Ambil sel (td) terakhir dari baris tersebut
+        last_cell = first_row.select_one("td:last-child")
         
-        # Hasil biasanya ada di sel terakhir
-        if cells and len(cells) > 1:
-            result = cells[-1].get_text(strip=True)
-            if len(result) == 4 and result.isdigit():
-                print(f"Sukses mendapatkan hasil untuk {pasaran_id.upper()}: {result}")
+        if last_cell:
+            result = last_cell.get_text(strip=True)
+            if len(result) >= 4 and result.isdigit():
+                # Ambil 4 digit terakhir jika hasilnya lebih panjang (misal: SGP 4D)
+                result = result[-4:]
+                print(f"Sukses mendapatkan hasil untuk {pasaran_path.upper()}: {result}")
                 return result
             else:
                 print(f"Format hasil tidak valid: '{result}'")
                 return None
         else:
-            print("Tidak ditemukan sel yang cukup di baris pertama.")
+            print("Tidak ditemukan sel hasil di baris pertama.")
             return None
 
     except Exception as e:
-        print(f"Terjadi error saat memproses {pasaran_id.upper()}: {e}")
+        print(f"Terjadi error saat memproses {pasaran_path.upper()}: {e}")
         return None
 
 def update_file(filename, new_result):
@@ -80,14 +80,14 @@ def main():
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
     
     any_file_updated = False
-    for filename, pasaran_id in PASARAN_MAPPING.items():
+    for filename, pasaran_path in PASARAN_MAPPING.items():
         print(f"\nMemproses file: {filename}")
-        latest_result = get_latest_result(pasaran_id)
+        latest_result = get_latest_result(pasaran_path)
         if latest_result:
             if update_file(filename, latest_result): 
                 any_file_updated = True
         else: 
-            print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran_id.upper()}.")
+            print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran_path.upper()}.")
             
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
