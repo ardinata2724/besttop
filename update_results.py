@@ -1,105 +1,62 @@
 import os
-import time
+import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone, timedelta
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-from selenium_stealth import stealth
 
-# --- KONFIGURASI (Sudah Benar) ---
-NEW_URL = "https://server.scanangka.fun/keluaranharian"
-PASARAN_FILES = {
-    'hongkongpools': 'keluaran hongkongpools.txt', 'hongkong': 'keluaran hongkong lotto.txt',
-    'sydneypools': 'keluaran sydneypools.txt', 'sydney': 'keluaran sydney lotto.txt',
-    'singapore': 'keluaran singapura.txt', 'bullseye': 'keluaran bullseye.txt',
-}
-NEW_DROPDOWN_VALUES = {
-    'hongkongpools': 'HONGKONG', 'hongkong': 'HONGKONG', 'sydneypools': 'SYDNEY',
-    'sydney': 'SYDNEY', 'singapore': 'SINGAPORE', 'bullseye': 'BULLSEYE',
+# --- KONFIGURASI FINAL ---
+# Mapping nama file ke ID pasaran di sumber data yang baru
+PASARAN_MAPPING = {
+    'keluaran hongkongpools.txt': 'hk',
+    'keluaran hongkong lotto.txt': 'hk',
+    'keluaran sydneypools.txt': 'sdy',
+    'keluaran sydney lotto.txt': 'sdy',
+    'keluaran singapura.txt': 'sgp',
+    'keluaran bullseye.txt': 'bl',
 }
 
-driver = None
+# URL dari sumber data yang baru dan lebih stabil
+DATA_URL = "https://www.paitopaman.com/paito/"
 
-def setup_driver():
-    global driver
-    if driver is None:
-        try:
-            print("Menyiapkan driver undetected-chromedriver...")
-            options = uc.ChromeOptions()
-            options.add_argument("--headless")
-            options.add_argument("--no-sandbox")
-            options.add_argument("--disable-dev-shm-usage")
-            options.add_argument("--disable-gpu")
-            options.add_argument("--window-size=1920,1200")
-            options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36")
-            driver = uc.Chrome(options=options)
-            print("Mengaktifkan mode stealth...")
-            stealth(driver, languages=["en-US", "en"], vendor="Google Inc.", platform="Win32", webgl_vendor="Intel Inc.", renderer="Intel Iris OpenGL Engine", fix_hairline=True)
-            print("Mode stealth aktif.")
-        except Exception as e:
-            print(f"Error saat menyiapkan driver: {e}")
-
-def get_latest_result(pasaran):
-    if driver is None: return None
-    pasaran_lower = pasaran.lower()
-    if pasaran_lower not in NEW_DROPDOWN_VALUES: return None
-
+def get_latest_result(pasaran_id):
     try:
-        print(f"Mengunjungi URL: {NEW_URL}")
-        driver.get(NEW_URL)
-        wait = WebDriverWait(driver, 30)
-        time.sleep(5)
+        target_url = DATA_URL + pasaran_id
+        print(f"Mengunjungi URL: {target_url}")
+        
+        # Gunakan header untuk menyamar sebagai browser biasa
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'
+        }
+        
+        response = requests.get(target_url, headers=headers, timeout=30)
+        response.raise_for_status() # Cek jika ada error HTTP
 
-        print("Membuka dropdown pasaran...")
-        wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "span.select2-selection__rendered"))).click()
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        pasaran_target_text = NEW_DROPDOWN_VALUES[pasaran_lower]
-        print(f"Mengklik opsi '{pasaran_target_text}'...")
-        wait.until(EC.element_to_be_clickable((By.XPATH, f"//li[text()='{pasaran_target_text}']"))).click()
+        # Cari tabel dengan class 'table' dan ambil baris pertama di tbody
+        first_row = soup.select_one("table.table tbody tr:first-child")
+        
+        if not first_row:
+            print("Gagal menemukan baris pertama di tabel hasil.")
+            return None
 
-        print("Beralih ke dalam frame data...")
-        wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
+        # Ambil semua sel (td) di baris tersebut
+        cells = first_row.find_all("td")
         
-        # --- [PERBAIKAN FINAL] ---
-        # Ganti jeda statis dengan perintah menunggu yang cerdas
-        # "Tunggu sampai baris pertama (tr) di dalam tbody benar-benar muncul"
-        print("Menunggu data di dalam tabel untuk dimuat...")
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "table.table-bordered tbody tr")))
-
-        print("Mengambil kode HTML dari frame...")
-        html_content = driver.page_source
-        
-        print("Membaca data dari HTML menggunakan BeautifulSoup...")
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        result = None
-        first_row = soup.select_one("tbody tr:first-child")
-        if first_row:
-            result_cell = first_row.select_one("td:nth-child(2)")
-            if result_cell:
-                image_tags = result_cell.find_all("img")
-                if image_tags:
-                    digits = [img.get('src', '').split('/')[-1].split('.')[0] for img in image_tags if img.get('src', '').split('/')[-1].split('.')[0].isdigit()]
-                    if len(digits) == 4:
-                        result = "".join(digits)
-                        print(f"Sukses mendapatkan hasil untuk {pasaran}: {result}")
-                    else:
-                        print(f"Gagal menggabungkan angka dari gambar. Ditemukan: {''.join(digits)}")
-                else:
-                    print("Tidak ditemukan tag <img> di dalam sel hasil.")
+        # Hasil biasanya ada di sel terakhir
+        if cells and len(cells) > 1:
+            result = cells[-1].get_text(strip=True)
+            if len(result) == 4 and result.isdigit():
+                print(f"Sukses mendapatkan hasil untuk {pasaran_id.upper()}: {result}")
+                return result
             else:
-                print("Gagal menemukan sel hasil (kolom kedua).")
+                print(f"Format hasil tidak valid: '{result}'")
+                return None
         else:
-            print("Gagal menemukan baris pertama di dalam tabel.")
-
-        driver.switch_to.default_content()
-        return result
+            print("Tidak ditemukan sel yang cukup di baris pertama.")
+            return None
 
     except Exception as e:
-        print(f"Terjadi error saat memproses {pasaran}: {e}")
+        print(f"Terjadi error saat memproses {pasaran_id.upper()}: {e}")
         return None
 
 def update_file(filename, new_result):
@@ -121,19 +78,17 @@ def update_file(filename, new_result):
 def main():
     wib = timezone(timedelta(hours=7))
     print(f"--- Memulai proses pembaruan pada {datetime.now(wib).strftime('%Y-%m-%d %H:%M:%S WIB')} ---")
-    setup_driver()
+    
     any_file_updated = False
-    if driver:
-        for pasaran, filename in PASARAN_FILES.items():
-            print(f"\nMemproses pasaran: {pasaran.capitalize()}")
-            latest_result = get_latest_result(pasaran)
-            if latest_result:
-                if update_file(filename, latest_result): 
-                    any_file_updated = True
-            else: 
-                print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran}.")
-        driver.quit()
-        
+    for filename, pasaran_id in PASARAN_MAPPING.items():
+        print(f"\nMemproses file: {filename}")
+        latest_result = get_latest_result(pasaran_id)
+        if latest_result:
+            if update_file(filename, latest_result): 
+                any_file_updated = True
+        else: 
+            print(f"Tidak dapat mengambil hasil terbaru untuk {pasaran_id.upper()}.")
+            
     print("\n--- Proses pembaruan selesai. ---")
     if not any_file_updated:
         print("PERINGATAN: Tidak ada satu pun file yang diperbarui. Proses akan ditandai sebagai gagal.")
