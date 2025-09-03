@@ -183,7 +183,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     # Menentukan judul kolom berdasarkan tipe label
     if is_jalur_scan:
         pt, k, nc = "jalur_multiclass", 2, 3
-        cols = ["Window Size", "Prediksi", "Angka Jalur"]
+        cols = ["Window Size", "Prediksi", "Angka Jalur", "Angka Mati"]
     elif label in BBFS_LABELS:
         pt, k, nc = "multilabel", top_n, 10
         cols = ["Window Size", f"Top-{k}", "Angka Mati"]
@@ -214,30 +214,36 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             evals = model.evaluate(X_val, y_val, verbose=0); preds = model.predict(X_val, verbose=0)
 
             if is_jalur_scan:
-                top_indices = np.argsort(preds[-1])[::-1][:2]; pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
+                top_indices = np.argsort(preds[-1])[::-1][:2]
+                pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
+                
+                # Menyiapkan string untuk kolom "Angka Jalur"
                 angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"
+                
+                # Menentukan jalur yang tidak diprediksi (jalur mati)
+                all_jalur = {1, 2, 3}
+                predicted_jalur = {top_indices[0] + 1, top_indices[1] + 1}
+                jalur_mati = list(all_jalur - predicted_jalur)[0]
+                
+                # Mendapatkan angka dari jalur mati untuk kolom "Angka Mati"
+                angka_mati_str = JALUR_ANGKA_MAP[jalur_mati]
+
                 score = (evals[1] * 0.3) + (evals[2] * 0.7)
-                table_data.append((ws, pred_str, angka_jalur_str))
+                table_data.append((ws, pred_str, angka_jalur_str, angka_mati_str))
+
             else:
                 avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:])*100
                 top_indices = np.argsort(preds[-1])[::-1][:k]
-
-                # Logika untuk menentukan angka "Top" dan "Mati"
                 if pt == "shio":
                     all_numbers = set(range(1, 13))
                     top_numbers = set(top_indices + 1)
-                else: # Untuk digit, bbfs, jumlah
+                else: 
                     all_numbers = set(range(10))
                     top_numbers = set(top_indices)
-                
                 off_numbers = all_numbers - top_numbers
-                
-                # Mengurutkan angka agar tampilan konsisten
                 pred_str = ", ".join(map(str, sorted(list(top_numbers))))
                 off_str = ", ".join(map(str, sorted(list(off_numbers))))
-
                 score = (evals[1] * 0.7) + (avg_conf/100*0.3) if pt=='multilabel' else (evals[1]*0.2)+(evals[2]*0.5)+(avg_conf/100*0.3)
-                # Menambahkan data ke tabel, termasuk kolom baru "Angka Mati"
                 table_data.append((ws, pred_str, off_str))
 
             if score > best_score: best_score, best_ws = score, ws
