@@ -9,7 +9,7 @@ from itertools import product
 from datetime import datetime
 
 # ==============================================================================
-# BAGIAN 1: FUNGSI-FUNGSI INTI (Satu fungsi diubah)
+# BAGIAN 1: FUNGSI-FUNGSI INTI (Tidak ada perubahan di bagian ini)
 # ==============================================================================
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
@@ -172,15 +172,12 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n):
         results.append(list(np.mean(pred, axis=0).argsort()[-top_n:][::-1]))
     return results, None
 
-# --- PERUBAHAN DIMULAI DI FUNGSI INI ---
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
     from sklearn.model_selection import train_test_split
     from tensorflow.keras.callbacks import EarlyStopping
     from tensorflow.keras.metrics import TopKCategoricalAccuracy
     best_ws, best_score, table_data = None, -1, []
     is_jalur_scan = label in JALUR_LABELS
-    
-    # Menentukan judul kolom berdasarkan tipe label
     if is_jalur_scan:
         pt, k, nc = "jalur_multiclass", 2, 3
         cols = ["Window Size", "Prediksi", "Angka Jalur", "Angka Mati"]
@@ -190,17 +187,15 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     elif label in SHIO_LABELS:
         pt, k, nc = "shio", top_n_shio, 12
         cols = ["Window Size", f"Top-{k}", "Shio Mati"]
-    else: # Untuk DIGIT_LABELS dan JUMLAH_LABELS
+    else: 
         pt, k, nc = "multiclass", top_n, 10
         cols = ["Window Size", f"Top-{k}", "Angka Mati"]
-
     bar = st.progress(0, text=f"Memulai Scan {label.upper()}... [0%]")
     total_ws = (max_ws - min_ws) + 1
     for i, ws in enumerate(range(min_ws, max_ws + 1)):
         progress_value = (i + 1) / total_ws
         percentage = int(progress_value * 100)
         bar.progress(progress_value, text=f"Mencoba WS={ws}... [{percentage}%]")
-
         try:
             if is_jalur_scan: X, y = tf_preprocess_data_for_jalur(df, ws, label.split('_')[1])
             else: X, y_dict = tf_preprocess_data(df, ws); y = y_dict.get(label)
@@ -212,25 +207,16 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             model.compile(optimizer="adam", loss=loss, metrics=metrics)
             model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_val, y_val), callbacks=[EarlyStopping(monitor='val_loss', patience=3)], verbose=0)
             evals = model.evaluate(X_val, y_val, verbose=0); preds = model.predict(X_val, verbose=0)
-
             if is_jalur_scan:
                 top_indices = np.argsort(preds[-1])[::-1][:2]
                 pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
-                
-                # Menyiapkan string untuk kolom "Angka Jalur"
                 angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"
-                
-                # Menentukan jalur yang tidak diprediksi (jalur mati)
                 all_jalur = {1, 2, 3}
                 predicted_jalur = {top_indices[0] + 1, top_indices[1] + 1}
                 jalur_mati = list(all_jalur - predicted_jalur)[0]
-                
-                # Mendapatkan angka dari jalur mati untuk kolom "Angka Mati"
                 angka_mati_str = JALUR_ANGKA_MAP[jalur_mati]
-
                 score = (evals[1] * 0.3) + (evals[2] * 0.7)
                 table_data.append((ws, pred_str, angka_jalur_str, angka_mati_str))
-
             else:
                 avg_conf = np.mean(np.sort(preds, axis=1)[:, -k:])*100
                 top_indices = np.argsort(preds[-1])[::-1][:k]
@@ -245,12 +231,10 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
                 off_str = ", ".join(map(str, sorted(list(off_numbers))))
                 score = (evals[1] * 0.7) + (avg_conf/100*0.3) if pt=='multilabel' else (evals[1]*0.2)+(evals[2]*0.5)+(avg_conf/100*0.3)
                 table_data.append((ws, pred_str, off_str))
-
             if score > best_score: best_score, best_ws = score, ws
         except Exception as e: st.warning(f"Gagal di WS={ws}: {e}"); continue
     bar.empty()
     return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
-# --- PERUBAHAN SELESAI DI FUNGSI INI ---
 
 def train_and_save_model(df, lokasi, window_dict, model_type):
     from sklearn.model_selection import train_test_split
@@ -274,11 +258,15 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
         bar.progress(100, text=f"Model {label.upper()} berhasil disimpan!"); time.sleep(1); bar.empty()
 
 # ==============================================================================
-# APLIKASI STREAMLIT UTAMA (Tidak ada perubahan di bagian ini)
+# APLIKASI STREAMLIT UTAMA (Bagian ini diubah)
 # ==============================================================================
 st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
+# --- PERUBAHAN 1: Tambahkan state baru ---
 if 'angka_list' not in st.session_state: st.session_state.angka_list = []
+if 'angka_list_2' not in st.session_state: st.session_state.angka_list_2 = []
+if 'active_data' not in st.session_state: st.session_state.active_data = 'A'
+
 if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
 if 'scan_queue' not in st.session_state: st.session_state.scan_queue = []
 if 'current_scan_job' not in st.session_state: st.session_state.current_scan_job = None
@@ -311,28 +299,66 @@ def get_file_name_from_lokasi(lokasi):
     if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
     return f"keluaran {lokasi.lower()}.txt"
 
+# --- PERUBAHAN 2: Tata letak baru untuk input data ---
+st.subheader("Pengelolaan Data Angka")
 if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
     folder_data = "data_keluaran"
     base_filename = get_file_name_from_lokasi(selected_lokasi)
     file_path = os.path.join(folder_data, base_filename)
-    
     try:
         with open(file_path, 'r') as f:
             lines = f.readlines()
         angka_from_file = [line.strip()[:4] for line in lines[-putaran:] if line.strip() and line.strip()[:4].isdigit()]
         if angka_from_file:
-            st.session_state.angka_list = angka_from_file
-            st.success(f"{len(angka_from_file)} data berhasil diambil dari '{file_path}'.")
+            # Memasukkan data ke list yang sedang aktif
+            if st.session_state.active_data == 'A':
+                st.session_state.angka_list = angka_from_file
+            else:
+                st.session_state.angka_list_2 = angka_from_file
+            st.success(f"{len(angka_from_file)} data berhasil dimuat ke 'Data {st.session_state.active_data}' dari '{base_filename}'.")
+            st.rerun()
     except FileNotFoundError:
-        st.error(f"File tidak ditemukan: '{file_path}'. Pastikan file ada di dalam folder '{folder_data}'.")
+        st.error(f"File tidak ditemukan: '{file_path}'.")
 
-with st.expander("✏️ Edit Data Angka Manual", expanded=True):
-    riwayat_text = st.text_area("1 angka per baris:", "\n".join(st.session_state.angka_list), height=300, key="manual_data_input")
-    if riwayat_text != "\n".join(st.session_state.angka_list):
-        st.session_state.angka_list = [line.strip()[:4] for line in riwayat_text.splitlines() if line.strip() and line.strip()[:4].isdigit()]
+st.radio(
+    "Pilih Set Data Aktif (untuk prediksi, analisis, & training):",
+    ('A', 'B'),
+    key='active_data',
+    horizontal=True,
+)
+
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("##### ✏️ Edit Data Manual A")
+    riwayat_text_1 = st.text_area(
+        "1 angka per baris (Data A):",
+        "\n".join(st.session_state.angka_list),
+        height=300,
+        key="manual_data_input_1",
+        label_visibility="collapsed"
+    )
+    if riwayat_text_1 != "\n".join(st.session_state.angka_list):
+        st.session_state.angka_list = [line.strip()[:4] for line in riwayat_text_1.splitlines() if line.strip() and line.strip()[:4].isdigit()]
         st.rerun()
 
-df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
+with col2:
+    st.markdown("##### ✏️ Edit Data Manual B")
+    riwayat_text_2 = st.text_area(
+        "1 angka per baris (Data B):",
+        "\n".join(st.session_state.angka_list_2),
+        height=300,
+        key="manual_data_input_2",
+        label_visibility="collapsed"
+    )
+    if riwayat_text_2 != "\n".join(st.session_state.angka_list_2):
+        st.session_state.angka_list_2 = [line.strip()[:4] for line in riwayat_text_2.splitlines() if line.strip() and line.strip()[:4].isdigit()]
+        st.rerun()
+
+# --- PERUBAHAN 3: Membuat DataFrame dari data yang aktif ---
+active_list = st.session_state.angka_list if st.session_state.active_data == 'A' else st.session_state.angka_list_2
+df = pd.DataFrame({"angka": active_list})
+
+# Tabs tidak berubah, akan menggunakan 'df' yang sudah ditentukan di atas
 tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs(["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"])
 
 with tab_prediksi:
@@ -370,7 +396,6 @@ with tab_manajemen:
 
 with tab_scan:
     st.subheader("Pencarian Window Size (WS) Optimal per Kategori")
-    
     scan_cols = st.columns(2)
     min_ws = scan_cols[0].number_input("Min WS", 1, 99, 5)
     max_ws = scan_cols[1].number_input("Max WS", 1, 100, 31)
@@ -407,9 +432,7 @@ with tab_scan:
     if st.session_state.scan_outputs:
         st.markdown("---")
         st.subheader("✅ Hasil Scan Selesai")
-        
         display_order = DIGIT_LABELS + JUMLAH_LABELS + BBFS_LABELS + SHIO_LABELS + JALUR_LABELS
-
         for label in display_order:
             if label in st.session_state.scan_outputs:
                 data = st.session_state.scan_outputs[label]
@@ -421,7 +444,6 @@ with tab_scan:
                             st.info(f"💡 **WS terbaik yang ditemukan: {data['ws']}**")
                     else:
                         st.warning("Tidak ada hasil yang valid untuk rentang WS ini.")
-        
         st.markdown("---")
 
     if st.session_state.scan_queue:
