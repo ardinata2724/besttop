@@ -262,11 +262,9 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
 # ==============================================================================
 st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
-# --- PERUBAHAN 1: Tambahkan state baru ---
 if 'angka_list' not in st.session_state: st.session_state.angka_list = []
 if 'angka_list_2' not in st.session_state: st.session_state.angka_list_2 = []
 if 'active_data' not in st.session_state: st.session_state.active_data = 'A'
-
 if 'scan_outputs' not in st.session_state: st.session_state.scan_outputs = {}
 if 'scan_queue' not in st.session_state: st.session_state.scan_queue = []
 if 'current_scan_job' not in st.session_state: st.session_state.current_scan_job = None
@@ -299,7 +297,6 @@ def get_file_name_from_lokasi(lokasi):
     if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
     return f"keluaran {lokasi.lower()}.txt"
 
-# --- PERUBAHAN 2: Tata letak baru untuk input data ---
 st.subheader("Pengelolaan Data Angka")
 if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
     folder_data = "data_keluaran"
@@ -310,11 +307,10 @@ if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
             lines = f.readlines()
         angka_from_file = [line.strip()[:4] for line in lines[-putaran:] if line.strip() and line.strip()[:4].isdigit()]
         if angka_from_file:
-            # Memasukkan data ke list yang sedang aktif
             if st.session_state.active_data == 'A':
                 st.session_state.angka_list = angka_from_file
             else:
-                st.session_state.angka_list_2 = angka_from_file
+                st.session_state.angka_list_2 = [line.strip().split()[-1][:4] for line in lines[-putaran:] if line.strip() and line.strip().split()[-1][:4].isdigit()]
             st.success(f"{len(angka_from_file)} data berhasil dimuat ke 'Data {st.session_state.active_data}' dari '{base_filename}'.")
             st.rerun()
     except FileNotFoundError:
@@ -338,6 +334,7 @@ with col1:
         label_visibility="collapsed"
     )
     if riwayat_text_1 != "\n".join(st.session_state.angka_list):
+        # --- PERUBAHAN DI SINI: Logika untuk KOTAK A (mengambil 4 angka pertama) ---
         st.session_state.angka_list = [line.strip()[:4] for line in riwayat_text_1.splitlines() if line.strip() and line.strip()[:4].isdigit()]
         st.rerun()
 
@@ -351,14 +348,13 @@ with col2:
         label_visibility="collapsed"
     )
     if riwayat_text_2 != "\n".join(st.session_state.angka_list_2):
-        st.session_state.angka_list_2 = [line.strip()[:4] for line in riwayat_text_2.splitlines() if line.strip() and line.strip()[:4].isdigit()]
+        # --- TIDAK ADA PERUBAHAN: Logika untuk KOTAK B (mengambil 4 angka terakhir) ---
+        st.session_state.angka_list_2 = [line.strip().split()[-1][:4] for line in riwayat_text_2.splitlines() if line.strip() and line.strip().split()[-1][:4].isdigit()]
         st.rerun()
 
-# --- PERUBAHAN 3: Membuat DataFrame dari data yang aktif ---
 active_list = st.session_state.angka_list if st.session_state.active_data == 'A' else st.session_state.angka_list_2
 df = pd.DataFrame({"angka": active_list})
 
-# Tabs tidak berubah, akan menggunakan 'df' yang sudah ditentukan di atas
 tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs(["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"])
 
 with tab_prediksi:
