@@ -9,7 +9,7 @@ from itertools import product
 from datetime import datetime
 
 # ==============================================================================
-# BAGIAN 1: FUNGSI-FUNGSI INTI (Satu fungsi diubah)
+# BAGIAN 1: FUNGSI-FUNGSI INTI (Tidak ada perubahan di bagian ini)
 # ==============================================================================
 DIGIT_LABELS = ["ribuan", "ratusan", "puluhan", "satuan"]
 BBFS_LABELS = ["bbfs_ribuan-ratusan", "bbfs_ratusan-puluhan", "bbfs_puluhan-satuan"]
@@ -172,7 +172,6 @@ def top_n_model(df, lokasi, window_dict, model_type, top_n):
         results.append(list(np.mean(pred, axis=0).argsort()[-top_n:][::-1]))
     return results, None
 
-# --- PERUBAHAN DIMULAI DI FUNGSI INI ---
 def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_shio):
     from sklearn.model_selection import train_test_split
     from tensorflow.keras.callbacks import EarlyStopping
@@ -180,7 +179,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     best_ws, best_score, table_data = None, -1, []
     is_jalur_scan = label in JALUR_LABELS
     
-    # Menentukan judul kolom berdasarkan tipe label
     if is_jalur_scan:
         pt, k, nc = "jalur_multiclass", 2, 3
         cols = ["Window Size", "Prediksi", "Angka Jalur", "Angka Mati"]
@@ -190,7 +188,7 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
     elif label in SHIO_LABELS:
         pt, k, nc = "shio", top_n_shio, 12
         cols = ["Window Size", f"Top-{k}", "Shio Mati"]
-    else: # Untuk DIGIT_LABELS dan JUMLAH_LABELS
+    else: 
         pt, k, nc = "multiclass", top_n, 10
         cols = ["Window Size", f"Top-{k}", "Angka Mati"]
 
@@ -216,18 +214,11 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
             if is_jalur_scan:
                 top_indices = np.argsort(preds[-1])[::-1][:2]
                 pred_str = f"{top_indices[0] + 1}-{top_indices[1] + 1}"
-                
-                # Menyiapkan string untuk kolom "Angka Jalur"
                 angka_jalur_str = f"Jalur {top_indices[0] + 1} => {JALUR_ANGKA_MAP[top_indices[0] + 1]}\n\nJalur {top_indices[1] + 1} => {JALUR_ANGKA_MAP[top_indices[1] + 1]}"
-                
-                # Menentukan jalur yang tidak diprediksi (jalur mati)
                 all_jalur = {1, 2, 3}
                 predicted_jalur = {top_indices[0] + 1, top_indices[1] + 1}
                 jalur_mati = list(all_jalur - predicted_jalur)[0]
-                
-                # Mendapatkan angka dari jalur mati untuk kolom "Angka Mati"
                 angka_mati_str = JALUR_ANGKA_MAP[jalur_mati]
-
                 score = (evals[1] * 0.3) + (evals[2] * 0.7)
                 table_data.append((ws, pred_str, angka_jalur_str, angka_mati_str))
 
@@ -250,7 +241,6 @@ def find_best_window_size(df, label, model_type, min_ws, max_ws, top_n, top_n_sh
         except Exception as e: st.warning(f"Gagal di WS={ws}: {e}"); continue
     bar.empty()
     return best_ws, pd.DataFrame(table_data, columns=cols) if table_data else pd.DataFrame()
-# --- PERUBAHAN SELESAI DI FUNGSI INI ---
 
 def train_and_save_model(df, lokasi, window_dict, model_type):
     from sklearn.model_selection import train_test_split
@@ -274,7 +264,7 @@ def train_and_save_model(df, lokasi, window_dict, model_type):
         bar.progress(100, text=f"Model {label.upper()} berhasil disimpan!"); time.sleep(1); bar.empty()
 
 # ==============================================================================
-# APLIKASI STREAMLIT UTAMA (Tidak ada perubahan di bagian ini)
+# APLIKASI STREAMLIT UTAMA (Bagian ini diubah)
 # ==============================================================================
 st.set_page_config(page_title="Prediksi 4D", layout="wide")
 
@@ -311,26 +301,41 @@ def get_file_name_from_lokasi(lokasi):
     if "sydneypools" in cleaned_lokasi: return "keluaran sydneypools.txt"
     return f"keluaran {lokasi.lower()}.txt"
 
-if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
-    folder_data = "data_keluaran"
-    base_filename = get_file_name_from_lokasi(selected_lokasi)
-    file_path = os.path.join(folder_data, base_filename)
-    
-    try:
-        with open(file_path, 'r') as f:
-            lines = f.readlines()
-        angka_from_file = [line.strip()[:4] for line in lines[-putaran:] if line.strip() and line.strip()[:4].isdigit()]
-        if angka_from_file:
-            st.session_state.angka_list = angka_from_file
-            st.success(f"{len(angka_from_file)} data berhasil diambil dari '{file_path}'.")
-    except FileNotFoundError:
-        st.error(f"File tidak ditemukan: '{file_path}'. Pastikan file ada di dalam folder '{folder_data}'.")
+# --- PERUBAHAN DIMULAI DI SINI ---
+st.subheader("Pengelolaan Data Angka")
+col1, col2 = st.columns(2)
 
-with st.expander("✏️ Edit Data Angka Manual", expanded=True):
-    riwayat_text = st.text_area("1 angka per baris:", "\n".join(st.session_state.angka_list), height=300, key="manual_data_input")
+with col1:
+    st.markdown("##### 📂 Ambil Data dari File")
+    if st.button("Ambil Data dari Keluaran Angka", use_container_width=True):
+        folder_data = "data_keluaran"
+        base_filename = get_file_name_from_lokasi(selected_lokasi)
+        file_path = os.path.join(folder_data, base_filename)
+        
+        try:
+            with open(file_path, 'r') as f:
+                lines = f.readlines()
+            angka_from_file = [line.strip()[:4] for line in lines[-putaran:] if line.strip() and line.strip()[:4].isdigit()]
+            if angka_from_file:
+                st.session_state.angka_list = angka_from_file
+                st.success(f"{len(angka_from_file)} data berhasil diambil dari '{base_filename}'.")
+                st.rerun()
+        except FileNotFoundError:
+            st.error(f"File tidak ditemukan: '{file_path}'.")
+
+with col2:
+    st.markdown("##### ✏️ Edit Data Angka Manual")
+    riwayat_text = st.text_area(
+        "Satu angka 4-digit per baris:", 
+        "\n".join(st.session_state.angka_list), 
+        height=248, 
+        key="manual_data_input",
+        label_visibility="visible"
+    )
     if riwayat_text != "\n".join(st.session_state.angka_list):
         st.session_state.angka_list = [line.strip()[:4] for line in riwayat_text.splitlines() if line.strip() and line.strip()[:4].isdigit()]
         st.rerun()
+# --- PERUBAHAN SELESAI DI SINI ---
 
 df = pd.DataFrame({"angka": st.session_state.get("angka_list", [])})
 tab_scan, tab_manajemen, tab_angka_main, tab_prediksi = st.tabs(["🪟 Scan Window Size", "⚙️ Manajemen Model", "🎯 Angka Main", "🔮 Prediksi & Hasil"])
